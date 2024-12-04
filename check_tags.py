@@ -29,16 +29,6 @@ def check_labels():
             for label in labels:
                 x_label_sets.add(label)
                 y_label_sets.add(label)
-            # print("title: ", content[0])
-            # print("abstract: ", content[1])
-            # print("subjects: ", content[2])
-            # subjects = content[2].split(" ")
-            # subjectNames = [tags[subject].get("Name") for subject in subjects]
-            # print("subjectNames: ", subjectNames)
-        # print(contents)
-        # for lines in content:
-        #     print(lines)
     print(len(y_label_sets))
     print(len(x_label_sets))
 check_labels()
-# generate_subject_mapping_file()
