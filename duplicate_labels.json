@@ -1,0 +1,1668 @@
+{
+    "Umwelt": [
+        {
+            "Code": "gnd:4121809-7",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Umwelt",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4061616-2",
+            "Classification Number": "10.7a",
+            "Classification Name": "Umweltschutz, Umweltbelastung",
+            "Name": "Umwelt",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "B 1986"
+        }
+    ],
+    "Lager": [
+        {
+            "Code": "gnd:4034071-5",
+            "Classification Number": "31.6",
+            "Classification Name": "Maschinenbau",
+            "Name": "Lager",
+            "Alternate Name": [
+                "Lagerung"
+            ],
+            "Related Subjects": [
+                "Maschinenelement"
+            ],
+            "Source": "M 2."
+        },
+        {
+            "Code": "gnd:4125574-4",
+            "Classification Number": "31.7",
+            "Classification Name": "Fahrzeugbau, F\u00f6rdertechnik, Raumfahrttechnik",
+            "Name": "Lager",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Lagerung"
+            ],
+            "Source": "M 1.",
+            "Definition": "benutzt fu\u0308r die Vorratshaltung"
+        }
+    ],
+    "Neuer Markt": [
+        {
+            "Code": "gnd:4419554-0",
+            "Classification Number": "10.2c",
+            "Classification Name": "Mikro\u00f6konomie, Wettbewerb",
+            "Name": "Neuer Markt",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Markt"
+            ],
+            "Source": "Vorlage",
+            "Definition": "Ma\u0308rkte, die aufgrund neuer Produkte, eines neuen Marktzuschnitts, einer neuen Marktregion etc. neu entstanden sind"
+        },
+        {
+            "Code": "gnd:4557875-8",
+            "Classification Number": "10.9c",
+            "Classification Name": "Kapitalmarkt, B\u00f6rse, Kapitalanlage",
+            "Name": "Neuer Markt",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Aktienbo\u0308rse"
+            ],
+            "Source": "B 1996 unter \"Neuer Markt\""
+        }
+    ],
+    "Trajektorie": [
+        {
+            "Code": "gnd:4406251-5",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Trajektorie",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Kurve"
+            ],
+            "Source": "B 1986 2."
+        },
+        {
+            "Code": "gnd:4208631-0",
+            "Classification Number": "21.2",
+            "Classification Name": "Mechanik, W\u00e4rme, Akustik",
+            "Name": "Trajektorie",
+            "Alternate Name": [
+                "Teilchenbahn",
+                "Bahnkurve",
+                "Bewegungsbahn"
+            ],
+            "Related Subjects": [],
+            "Source": "B 1986 1."
+        }
+    ],
+    "Geste": [
+        {
+            "Code": "gnd:4516644-4",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Geste",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Geba\u0308rde",
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4157147-2",
+            "Classification Number": "5.1a",
+            "Classification Name": "Psychologie (Allgemeines), Experimentelle Psychologie",
+            "Name": "Geste",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Nichtverbale Kommunikation",
+                "Ko\u0308rpersprache",
+                "Gebaren",
+                "Gestik",
+                "Geba\u0308rde"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Bewegungsanalyse": [
+        {
+            "Code": "gnd:4302721-0",
+            "Classification Number": "31.9b",
+            "Classification Name": "Elektronik, Nachrichtentechnik",
+            "Name": "Bewegungsanalyse",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Bewegtes Bild",
+                "Bildfolgenanalyse",
+                "Bewegungsmessung"
+            ],
+            "Source": "ZDE-Thes."
+        },
+        {
+            "Code": "gnd:4122917-4",
+            "Classification Number": "34.1",
+            "Classification Name": "Sport (Allgemeines)",
+            "Name": "Bewegungsanalyse",
+            "Alternate Name": [
+                "Bewegungsablauf"
+            ],
+            "Related Subjects": [
+                "Analyse",
+                "Biomechanische Analyse"
+            ],
+            "Source": "Sportwiss. Lex., Reallex Med."
+        }
+    ],
+    "Netzwerkanalyse": [
+        {
+            "Code": "gnd:4075298-7",
+            "Classification Number": "31.9a",
+            "Classification Name": "Elektrotechnik, Elektrische Energietechnik",
+            "Name": "Netzwerkanalyse",
+            "Alternate Name": [
+                "Elektrisches Netzwerk"
+            ],
+            "Related Subjects": [
+                "Netzwerktheorie"
+            ],
+            "Source": "ZDE-Thes.",
+            "Definition": "verwendet fu\u0308r Elektrotechnik"
+        },
+        {
+            "Code": "gnd:4205975-6",
+            "Classification Number": "9.2b",
+            "Classification Name": "Methoden und Techniken der empirischen Sozialforschung, Statistik in den Sozialwissenschaften, Mathematische Statistik",
+            "Name": "Netzwerkanalyse",
+            "Alternate Name": [
+                "Soziales Netzwerk"
+            ],
+            "Related Subjects": [],
+            "Source": "Lex. Soz",
+            "Definition": "Methode zur Analyse der Struktur sozialer Netzwerke"
+        }
+    ],
+    "Aggregat": [
+        {
+            "Code": "gnd:4124529-5",
+            "Classification Number": "31.6",
+            "Classification Name": "Maschinenbau",
+            "Name": "Aggregat",
+            "Alternate Name": [
+                "Betriebsmittel"
+            ],
+            "Related Subjects": [],
+            "Source": "B 1986 6., M 1."
+        },
+        {
+            "Code": "gnd:4333754-5",
+            "Classification Number": "22.2",
+            "Classification Name": "Theoretische und Physikalische Chemie",
+            "Name": "Aggregat",
+            "Alternate Name": [
+                "Aggregiertes System"
+            ],
+            "Related Subjects": [
+                "Aggregation"
+            ],
+            "Source": "B 1986 unter Aggregation 2.",
+            "Definition": "Aggregate sind jegliche Art v. ra\u0308uml. Anha\u0308ufung v. Atomen und Mol. durch Koha\u0308sion (gleichart. Mol.=Assoziate)"
+        }
+    ],
+    "Prozess": [
+        {
+            "Code": "gnd:4361760-8",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Prozess",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4235427-4",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Prozess",
+            "Alternate Name": [
+                "Prozesstheorie"
+            ],
+            "Related Subjects": [],
+            "Source": "- Duden Informatik"
+        }
+    ],
+    "Reduktion": [
+        {
+            "Code": "gnd:4177306-8",
+            "Classification Number": "00",
+            "Classification Name": "Unspezifische Allgemeinw\u00f6rter",
+            "Name": "Reduktion",
+            "Alternate Name": [
+                "Verminderung",
+                "Senkung",
+                "Reduzierung",
+                "Verringerung",
+                "Schma\u0308lerung",
+                "Abbau",
+                "Abbau"
+            ],
+            "Related Subjects": [
+                "Ku\u0308rzung",
+                "Gegenma\u00dfnahme"
+            ],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4277879-7",
+            "Classification Number": "22.2",
+            "Classification Name": "Theoretische und Physikalische Chemie",
+            "Name": "Reduktion",
+            "Alternate Name": [
+                "Reduktionsreaktion"
+            ],
+            "Related Subjects": [
+                "Redoxreaktion"
+            ],
+            "Source": "M 4."
+        }
+    ],
+    "Ontologie": [
+        {
+            "Code": "gnd:4827894-4",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Ontologie",
+            "Alternate Name": [
+                "Ontology",
+                "Ontology"
+            ],
+            "Related Subjects": [
+                "Wissensrepra\u0308sentation",
+                "Begriffssystem",
+                "Wissensbasis"
+            ],
+            "Source": "W Kognitionswiss.; Wikipedia; FOLDOC",
+            "Definition": "1. Eine explizite, formale Spezifizierung einer gemeinsamen Konzeptualisierung. 2. Ein formal definiertes System von Dingen und/oder Konzepten und Relationen zwischen diesen Dingen (Wikipedia). 3. Explizite begriffliche Formalisierungen eines Anwendungsbereiches (Wissensbereich, Knowledge Domain). 4. Die Darstellung und Formalisierung von Wissen. 5. Hierarchische Ordnung von Begriffen (W Kognitionswiss.). 6. Eine Menge von Begriffen, die zueinander in Beziehung gesetzt werden."
+        },
+        {
+            "Code": "gnd:4075660-9",
+            "Classification Number": "4.4",
+            "Classification Name": "Metaphysik",
+            "Name": "Ontologie",
+            "Alternate Name": [
+                "Seinslehre",
+                "Seinsphilosophie"
+            ],
+            "Related Subjects": [
+                "Metaphysik",
+                "Sein"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Transformation": [
+        {
+            "Code": "gnd:4451062-7",
+            "Classification Number": "00",
+            "Classification Name": "Unspezifische Allgemeinw\u00f6rter",
+            "Name": "Transformation",
+            "Alternate Name": [
+                "Umsetzung"
+            ],
+            "Related Subjects": [],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4060637-5",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Transformation",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "M 1., 2."
+        }
+    ],
+    "Architektur": [
+        {
+            "Code": "gnd:4139374-0",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Architektur",
+            "Alternate Name": [
+                "Systemarchitektur"
+            ],
+            "Related Subjects": [],
+            "Source": "B 1996 2., Lex. Informatik"
+        },
+        {
+            "Code": "gnd:4002851-3",
+            "Classification Number": "31.3a",
+            "Classification Name": "Architektur",
+            "Name": "Architektur",
+            "Alternate Name": [
+                "Baukunst"
+            ],
+            "Related Subjects": [
+                "Architekt",
+                "Baudenkmal",
+                "Bauweise",
+                "Innenarchitektur"
+            ],
+            "Source": "B Wissen"
+        },
+        {
+            "Code": "gnd:4112586-1",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Architektur",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Architekturbild",
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Film": [
+        {
+            "Code": "gnd:4017102-4",
+            "Classification Number": "15.3",
+            "Classification Name": "Film",
+            "Name": "Film",
+            "Alternate Name": [
+                "Kino",
+                "Filmaufnahme"
+            ],
+            "Related Subjects": [
+                "Audiovisuelles Material"
+            ],
+            "Source": "M",
+            "Definition": "Mit fotografischen oder elektronischen Mitteln erzeugte Folge von Einzelbildern, die \u2013 auf eine Leinwand projiziert oder auf einem Bildschirm sichtbar gemacht \u2013 den Eindruck von Bewegung hervorruft (RDA AH-007)."
+        },
+        {
+            "Code": "gnd:4276347-2",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Film",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Fotolithografie": [
+        {
+            "Code": "gnd:4174516-4",
+            "Classification Number": "31.9b",
+            "Classification Name": "Elektronik, Nachrichtentechnik",
+            "Name": "Fotolithografie",
+            "Alternate Name": [
+                "Photolithographie"
+            ],
+            "Related Subjects": [
+                "Lithografie"
+            ],
+            "Source": "M/Nachtr. unter Lithographie",
+            "Source URL": "https://de.wikipedia.org/w/index.php?title=Fotolithografie_(Halbleitertechnik)&oldid=208832106"
+        },
+        {
+            "Code": "gnd:4274823-9",
+            "Classification Number": "31.14",
+            "Classification Name": "Papierherstellung, Grafische Technik",
+            "Name": "Fotolithografie",
+            "Alternate Name": [
+                "Photolithographie",
+                "Fotolithographie",
+                "Optische Lithographie",
+                "Optische Lithografie"
+            ],
+            "Related Subjects": [
+                "Lithografie"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Ru\u0308ckverfolgbarkeit": [
+        {
+            "Code": "gnd:1022831690",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Ru\u0308ckverfolgbarkeit",
+            "Alternate Name": [
+                "Traceability",
+                "Nachvollziehbarkeit"
+            ],
+            "Related Subjects": [
+                "Softwareentwicklung",
+                "Systementwicklung",
+                "Requirements engineering"
+            ],
+            "Source": "Wikipedia als Ru\u0308ckverfolgbarkeit (Anforderungsmanagement)"
+        },
+        {
+            "Code": "gnd:4806498-1",
+            "Classification Number": "10.12",
+            "Classification Name": "Gewerbe allgemein, Industrie, Handwerk",
+            "Name": "Ru\u0308ckverfolgbarkeit",
+            "Alternate Name": [
+                "Tracing",
+                "Traceability"
+            ],
+            "Related Subjects": [
+                "Wertscho\u0308pfungskette"
+            ],
+            "Source": "Wikipedia unter Ru\u0308ckverfolgbarkeit (Produktionswirtschaft)",
+            "Definition": "Mo\u0308glichkeit, bei e. Produkt oder e. Handelsware jederzeit festzustellen, wann u. wo u. durch wen d. Ware gewonnen, hergestellt, verarbeitet, gelagert, transportiert, verbraucht oder entsorgt wurde"
+        }
+    ],
+    "Lagerung": [
+        {
+            "Code": "gnd:4354980-9",
+            "Classification Number": "31.7",
+            "Classification Name": "Fahrzeugbau, F\u00f6rdertechnik, Raumfahrttechnik",
+            "Name": "Lagerung",
+            "Alternate Name": [
+                "Lagern",
+                "Einlagerung"
+            ],
+            "Related Subjects": [
+                "Lager",
+                "Lagerhaltung",
+                "Lagertechnik"
+            ],
+            "Source": "DOMA-Thes."
+        },
+        {
+            "Code": "gnd:4354981-0",
+            "Classification Number": "19.4a",
+            "Classification Name": "Allgemeine Geologie, Geophysik",
+            "Name": "Lagerung",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "B 1986 1."
+        }
+    ],
+    "Stadt": [
+        {
+            "Code": "gnd:4056723-0",
+            "Classification Number": "19.1c",
+            "Classification Name": "Anthropogeografie",
+            "Name": "Stadt",
+            "Alternate Name": [
+                "Stadtgebiet",
+                "Sta\u0308dte"
+            ],
+            "Related Subjects": [
+                "Gemeinde"
+            ],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4126697-3",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Stadt",
+            "Alternate Name": [
+                "Stadtansicht"
+            ],
+            "Related Subjects": [
+                "Ortsansicht",
+                "Motiv"
+            ],
+            "Source": "SWL"
+        }
+    ],
+    "Netzwerk": [
+        {
+            "Code": "gnd:4171529-9",
+            "Classification Number": "1",
+            "Classification Name": "Allgemeines, Interdisziplin\u00e4re Allgemeinw\u00f6rter",
+            "Name": "Netzwerk",
+            "Alternate Name": [
+                "Netz"
+            ],
+            "Related Subjects": [
+                "Vernetzung"
+            ],
+            "Source": "B 1996",
+            "Definition": "Interdisziplina\u0308r benutzter Begriff fu\u0308r Strukturen mit netzartigen Verzweigungen. Ein N. kann verschiedene physikalische, strukturelle oder logische Sachverhalte repra\u0308sentieren."
+        },
+        {
+            "Code": "gnd:4705155-3",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Netzwerk",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Zusammenha\u0308ngender Graph"
+            ],
+            "Source": "Spektrum Lex. Mathematik",
+            "Definition": "Ein zusammenha\u0308ngender gerichteter Graph mit genau einer Quelle, genau einer Senke u. einer Kapazita\u0308tsfunktion"
+        }
+    ],
+    "Sto\u0308rung": [
+        {
+            "Code": "gnd:4237213-6",
+            "Classification Number": "19.4a",
+            "Classification Name": "Allgemeine Geologie, Geophysik",
+            "Name": "Sto\u0308rung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Geologische Struktur"
+            ],
+            "Source": "Murawski"
+        },
+        {
+            "Code": "gnd:4133232-5",
+            "Classification Number": "00",
+            "Classification Name": "Unspezifische Allgemeinw\u00f6rter",
+            "Name": "Sto\u0308rung",
+            "Alternate Name": [
+                "Perturbation",
+                "Beeintra\u0308chtigung",
+                "Sto\u0308rungen"
+            ],
+            "Related Subjects": [],
+            "Source": "Du."
+        }
+    ],
+    "Transkription": [
+        {
+            "Code": "gnd:4185906-6",
+            "Classification Number": "23.2",
+            "Classification Name": "Biochemie, Biophysik, Zytologie",
+            "Name": "Transkription",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Genexpression"
+            ],
+            "Source": "M 3."
+        },
+        {
+            "Code": "gnd:4170221-9",
+            "Classification Number": "2.1",
+            "Classification Name": "Schrift, Handschriftenkunde",
+            "Name": "Transkription",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Transliteration"
+            ],
+            "Source": "M",
+            "Definition": "Fu\u0308r die genetische Transkription verwende das SW Transkription <Genetik>"
+        }
+    ],
+    "Differentiation": [
+        {
+            "Code": "gnd:4149786-7",
+            "Classification Number": "19.4a",
+            "Classification Name": "Allgemeine Geologie, Geophysik",
+            "Name": "Differentiation",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "M 1."
+        },
+        {
+            "Code": "gnd:4149787-9",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Differentiation",
+            "Alternate Name": [
+                "Differenziation"
+            ],
+            "Related Subjects": [
+                "Differentialrechnung"
+            ],
+            "Source": "M 2."
+        }
+    ],
+    "Mikromechanik": [
+        {
+            "Code": "gnd:4205811-9",
+            "Classification Number": "31.9b",
+            "Classification Name": "Elektronik, Nachrichtentechnik",
+            "Name": "Mikromechanik",
+            "Alternate Name": [
+                "Mikrostrukturierung"
+            ],
+            "Related Subjects": [
+                "Mikrosystemtechnik",
+                "Nanotechnologie"
+            ],
+            "Source": "Lex. Elektronik Mikroelektronik",
+            "Definition": "Anwendung d. technolog. Methoden d. Mikroelektronik z. Herstellung v. Mikrobauteilen f. Mechanik, Pneumatik, Optik etc. u. Mechanisches Verhalten von Mikrogefu\u0308gen"
+        },
+        {
+            "Code": "gnd:1103469363",
+            "Classification Number": "21.5",
+            "Classification Name": "Plasma, Gas, Fl\u00fcssigkeit, Festk\u00f6rper",
+            "Name": "Mikromechanik",
+            "Alternate Name": [
+                "Micromechanics"
+            ],
+            "Related Subjects": [
+                "Werkstoffmechanik",
+                "Kontinuumsphysik"
+            ],
+            "Source": "Wikipedia engl.",
+            "Source URL": "https://en.wikipedia.org/w/index.php?title=Micromechanics&oldid=847419400",
+            "Definition": "Is the analysis of composite or heterogeneous materials on the level of the individual constituents that constitute these materials."
+        }
+    ],
+    "Hybrides System": [
+        {
+            "Code": "gnd:116732739X",
+            "Classification Number": "21.1",
+            "Classification Name": "Physik (Allgemeines), Mathematische Physik",
+            "Name": "Hybrides System",
+            "Alternate Name": [
+                "Hybridsystem",
+                "Hybrid"
+            ],
+            "Related Subjects": [
+                "Hybrides System",
+                "Heterostruktur",
+                "Wechselwirkung",
+                "Interdependenz"
+            ],
+            "Source": "Spektrum Lex. Physik",
+            "Source URL": "https://de.wikipedia.org/w/index.php?title=Hybrid&oldid=192213731",
+            "Definition": "Ein hybrides System, bezogen auf die Physik, ist ein physikalisches System, das aus zwei oder mehr Teilsystemen zusammengesetzt ist, die eindeutig durch einen physikalischen Parameter (oder mehrere) unterschieden werden ko\u0308nnen sowie ein Zusammenwirken ausbilden, das einem zu betrachtenden physikalischen Pha\u0308nomen zugrunde liegt."
+        },
+        {
+            "Code": "gnd:4510314-8",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Hybrides System",
+            "Alternate Name": [
+                "Diskret-kontinuierliches System"
+            ],
+            "Related Subjects": [
+                "Kontinuierliches System",
+                "Diskretes System",
+                "Hybrides System"
+            ],
+            "Source": "Vorlage",
+            "Definition": "Systeme aus Komponenten mit diskretem und kontinuierlichem Verhalten bzw. von digitalen und analogen Komponenten"
+        }
+    ],
+    "Subkultur": [
+        {
+            "Code": "gnd:7564318-2",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Subkultur",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4058326-0",
+            "Classification Number": "6.1a",
+            "Classification Name": "Kultur, K\u00fcnste allgemein",
+            "Name": "Subkultur",
+            "Alternate Name": [
+                "Scene",
+                "Szene"
+            ],
+            "Related Subjects": [
+                "Gegenkultur"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Integration": [
+        {
+            "Code": "gnd:4027238-2",
+            "Classification Number": "1",
+            "Classification Name": "Allgemeines, Interdisziplin\u00e4re Allgemeinw\u00f6rter",
+            "Name": "Integration",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Eingliederung"
+            ],
+            "Source": "M",
+            "Definition": "Benutzt fu\u0308r ganz allgemeine Sachverhalte, jedoch gegenu\u0308ber SW Eingliederung bevorzugt verwendet."
+        },
+        {
+            "Code": "gnd:4072852-3",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Integration",
+            "Alternate Name": [
+                "Quadratur"
+            ],
+            "Related Subjects": [
+                "Integral",
+                "Integrationstheorie"
+            ],
+            "Source": "M 8."
+        }
+    ],
+    "Soziale Bewegung": [
+        {
+            "Code": "gnd:4055707-8",
+            "Classification Number": "9.3b",
+            "Classification Name": "Bev\u00f6lkerung, Sozialstruktur, Soziale Situation, Soziale Bewegungen",
+            "Name": "Soziale Bewegung",
+            "Alternate Name": [
+                "Bewegung",
+                "Sozialbewegung",
+                "Volksbewegung",
+                "Soziale Bewegungen"
+            ],
+            "Related Subjects": [
+                "Politische Bewegung",
+                "Protestbewegung"
+            ],
+            "Source": "Lex. Soz."
+        },
+        {
+            "Code": "gnd:1175898139",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Soziale Bewegung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Diffusion": [
+        {
+            "Code": "gnd:4139407-0",
+            "Classification Number": "10.11e",
+            "Classification Name": "Marketing, Wettbewerb",
+            "Name": "Diffusion",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Adoption"
+            ],
+            "Source": "HW A"
+        },
+        {
+            "Code": "gnd:4012277-3",
+            "Classification Number": "21.2",
+            "Classification Name": "Mechanik, W\u00e4rme, Akustik",
+            "Name": "Diffusion",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Stoffu\u0308bertragung"
+            ],
+            "Source": "Ro\u0308mpp"
+        }
+    ],
+    "Dispersion": [
+        {
+            "Code": "gnd:4150202-4",
+            "Classification Number": "21.1",
+            "Classification Name": "Physik (Allgemeines), Mathematische Physik",
+            "Name": "Dispersion",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "M 3."
+        },
+        {
+            "Code": "gnd:4012484-8",
+            "Classification Number": "31.10",
+            "Classification Name": "Verfahrenstechnik, Technische Chemie",
+            "Name": "Dispersion",
+            "Alternate Name": [
+                "Disperses System"
+            ],
+            "Related Subjects": [
+                "Mehrphasensystem",
+                "Dispergierung"
+            ],
+            "Source": "B 1986"
+        }
+    ],
+    "Kind": [
+        {
+            "Code": "gnd:4233426-3",
+            "Classification Number": "6.2a",
+            "Classification Name": "Bildungswesen (Allgemeines)",
+            "Name": "Kind",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Kleinkind"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4030550-8",
+            "Classification Number": "5.2",
+            "Classification Name": "Entwicklungspsychologie, Vergleichende Psychologie",
+            "Name": "Kind",
+            "Alternate Name": [
+                "Kindheit",
+                "Kindesalter",
+                "Kindschaft",
+                "Kinder"
+            ],
+            "Related Subjects": [
+                "Lebensalter"
+            ],
+            "Source": "M",
+            "Definition": "Verwendet fu\u0308r das 1.-12. Lebensjahr sowie unabha\u0308ngig vom Alter fu\u0308r das Verha\u0308ltnis zu den Eltern; mit einzelnen Berufsgruppen wird i.d.R. kein Kompositum gebildet, z.B. SWW Missionar ; Kind."
+        }
+    ],
+    "Repra\u0308sentation": [
+        {
+            "Code": "gnd:4137492-7",
+            "Classification Number": "6.1a",
+            "Classification Name": "Kultur, K\u00fcnste allgemein",
+            "Name": "Repra\u0308sentation",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "B 1986 1."
+        },
+        {
+            "Code": "gnd:4202023-2",
+            "Classification Number": "9.3d",
+            "Classification Name": "Sozialisation, Sozialverhalten",
+            "Name": "Repra\u0308sentation",
+            "Alternate Name": [
+                "Soziale Repra\u0308sentation",
+                "Kollektive Repra\u0308sentation"
+            ],
+            "Related Subjects": [],
+            "Source": "Lex. Soz."
+        }
+    ],
+    "Meer": [
+        {
+            "Code": "gnd:4169235-4",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Meer",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4038301-5",
+            "Classification Number": "19.3",
+            "Classification Name": "Hydrologie, Meereskunde",
+            "Name": "Meer",
+            "Alternate Name": [
+                "Ozean",
+                "See",
+                "Weltmeer",
+                "Seegebiet",
+                "Meere",
+                "Ozeane",
+                "Weltmeere"
+            ],
+            "Related Subjects": [
+                "Meereskunde"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Plastizita\u0308t": [
+        {
+            "Code": "gnd:4174847-5",
+            "Classification Number": "23.1a",
+            "Classification Name": "Biologie allgemein",
+            "Name": "Plastizita\u0308t",
+            "Alternate Name": [
+                "Verformbarkeit"
+            ],
+            "Related Subjects": [
+                "Anpassung"
+            ],
+            "Source": "M 3., 4."
+        },
+        {
+            "Code": "gnd:4046283-3",
+            "Classification Number": "31.1d",
+            "Classification Name": "Werkstoffkunde, Werkstoffpr\u00fcfung",
+            "Name": "Plastizita\u0308t",
+            "Alternate Name": [
+                "Plastische Verformbarkeit",
+                "Plastische Deformierbarkeit"
+            ],
+            "Related Subjects": [
+                "Deformationsverhalten",
+                "Plastischer Zustand",
+                "Plastizita\u0308tstheorie"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Vernetzung": [
+        {
+            "Code": "gnd:4359141-3",
+            "Classification Number": "1",
+            "Classification Name": "Allgemeines, Interdisziplin\u00e4re Allgemeinw\u00f6rter",
+            "Name": "Vernetzung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Netzwerk"
+            ],
+            "Source": "B 1986",
+            "Definition": "Die wechselseitige Verknu\u0308pfung und Beeinflussung der Elemente eines komplexen (natu\u0308rlichen, technischen, sozialen oder o\u0308konomischen) Systems (B 1996)"
+        },
+        {
+            "Code": "gnd:4139250-4",
+            "Classification Number": "31.10",
+            "Classification Name": "Verfahrenstechnik, Technische Chemie",
+            "Name": "Vernetzung",
+            "Alternate Name": [
+                "Vernetzungsreaktion",
+                "Quervernetzung",
+                "Cross-link",
+                "Crosslinking"
+            ],
+            "Related Subjects": [
+                "Polymeres Netzwerk"
+            ],
+            "Source": "Ro\u0308mpp (9.Aufl.), M"
+        }
+    ],
+    "Sprachverarbeitung": [
+        {
+            "Code": "gnd:4300621-8",
+            "Classification Number": "5.1a",
+            "Classification Name": "Psychologie (Allgemeines), Experimentelle Psychologie",
+            "Name": "Sprachverarbeitung",
+            "Alternate Name": [
+                "Speech processing"
+            ],
+            "Related Subjects": [],
+            "Source": "- Bussmann, analog zu Textverarbeitung <Psycholinguistik>"
+        },
+        {
+            "Code": "gnd:4116579-2",
+            "Classification Number": "11.1a",
+            "Classification Name": "Sprache (Allgemeines)",
+            "Name": "Sprachverarbeitung",
+            "Alternate Name": [
+                "Maschinelle Sprachverarbeitung",
+                "Sprachsignalverarbeitung",
+                "Speech processing",
+                "Automatische Sprachverarbeitung"
+            ],
+            "Related Subjects": [
+                "Signalverarbeitung",
+                "Automatische Spracherkennung"
+            ],
+            "Source": "Lex. DV",
+            "Definition": "Verwendung des gesprochenen Wortes zur Dateneingabe und -ausgabe"
+        }
+    ],
+    "Wolfram": [
+        {
+            "Code": "gnd:4066862-9",
+            "Classification Number": "22.4",
+            "Classification Name": "Anorganische Chemie",
+            "Name": "Wolfram",
+            "Alternate Name": [
+                "Tungsten"
+            ],
+            "Related Subjects": [
+                "Sechste Nebengruppe",
+                "Fu\u0308nf-d-Element"
+            ],
+            "Source": "Ro\u0308mpp"
+        },
+        {
+            "Code": "gnd:1091597596",
+            "Classification Number": "30m",
+            "Classification Name": "Informatikprodukte (Hardware- und Softwareprodukte)",
+            "Name": "Wolfram",
+            "Alternate Name": [
+                "Wolfram language"
+            ],
+            "Related Subjects": [
+                "Mathematica",
+                "Programmiersprache"
+            ],
+            "Source": "Wikipedia [engl.]",
+            "Source URL": "http://www.wolfram.com/language",
+            "Definition": "Programmiersprache, wird insbesondere im Zusammenhang mit \"Mathematica\" und weiteren Mathematik- und Statistikprogrammen verwendet u.a."
+        }
+    ],
+    "Licht": [
+        {
+            "Code": "gnd:4035596-2",
+            "Classification Number": "21.3",
+            "Classification Name": "Elektrizit\u00e4t, Magnetismus, Optik",
+            "Name": "Licht",
+            "Alternate Name": [
+                "Sichtbares Licht"
+            ],
+            "Related Subjects": [
+                "Optische Strahlung"
+            ],
+            "Source": "M",
+            "Definition": "Sichtbarer Teil der optischen Strahlung"
+        },
+        {
+            "Code": "gnd:4202427-4",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Licht",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Umsetzung": [
+        {
+            "Code": "gnd:4204162-4",
+            "Classification Number": "7.5a",
+            "Classification Name": "Dienstrecht (auch Richter)",
+            "Name": "Umsetzung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Versetzung",
+                "Abordnung"
+            ],
+            "Source": "Creifelds"
+        },
+        {
+            "Code": "gnd:4377497-0",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Umsetzung",
+            "Alternate Name": [
+                "Konversion",
+                "Konvertierung"
+            ],
+            "Related Subjects": [],
+            "Source": "rororo-Comp.-Enz."
+        }
+    ],
+    "Post": [
+        {
+            "Code": "gnd:4135562-3",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Post",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4046886-0",
+            "Classification Number": "10.6a",
+            "Classification Name": "Telekommunikation und Verkehr",
+            "Name": "Post",
+            "Alternate Name": [
+                "Postwesen",
+                "Postdienst",
+                "Postbetrieb",
+                "Post- und Fernmeldewesen",
+                "Postverkehr"
+            ],
+            "Related Subjects": [],
+            "Source": "B 2006"
+        }
+    ],
+    "Mythos": [
+        {
+            "Code": "gnd:4075159-4",
+            "Classification Number": "3.1",
+            "Classification Name": "Allgemeine und vergleichende Religionswissenschaft, Nichtchristliche Religionen",
+            "Name": "Mythos",
+            "Alternate Name": [
+                "Mythe",
+                "Mythem",
+                "Mythus",
+                "Mythisierung",
+                "Mythologisierung",
+                "Mythen"
+            ],
+            "Related Subjects": [
+                "Mythologie",
+                "Sage",
+                "Entmythologisierung"
+            ],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4202767-6",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Mythos",
+            "Alternate Name": [
+                "Mythologie"
+            ],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Stadtplanung": [
+        {
+            "Code": "gnd:4056754-0",
+            "Classification Number": "10.7b",
+            "Classification Name": "Raumordnung, Stadtplanung, Landschaftsgestaltung",
+            "Name": "Stadtplanung",
+            "Alternate Name": [
+                "Stadt",
+                "Stadtentwicklungsplanung"
+            ],
+            "Related Subjects": [
+                "Raumordnung",
+                "Stadtentwicklungsplan"
+            ],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:1154506436",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Stadtplanung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ],
+    "Persistenz": [
+        {
+            "Code": "gnd:4247899-6",
+            "Classification Number": "30",
+            "Classification Name": "Informatik, Datenverarbeitung",
+            "Name": "Persistenz",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "Computer-Fachbegr."
+        },
+        {
+            "Code": "gnd:4136610-4",
+            "Classification Number": "1",
+            "Classification Name": "Allgemeines, Interdisziplin\u00e4re Allgemeinw\u00f6rter",
+            "Name": "Persistenz",
+            "Alternate Name": [
+                "Perseveranz"
+            ],
+            "Related Subjects": [
+                "Perseveration"
+            ],
+            "Source": "M 1., 2."
+        }
+    ],
+    "Modul": [
+        {
+            "Code": "gnd:4129770-2",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Modul",
+            "Alternate Name": [
+                "R-Modul"
+            ],
+            "Related Subjects": [
+                "Modultheorie"
+            ],
+            "Source": "M 2., Naas-Schmid"
+        },
+        {
+            "Code": "gnd:4329282-3",
+            "Classification Number": "31.1a",
+            "Classification Name": "Technik (Allgemeines)",
+            "Name": "Modul",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "Du. 2",
+            "Definition": "Austauschbare, komplexe Komponente eines Gera\u0308ts, einer Maschine u.a\u0308., die eine geschlossene Funktionseinheit bildet"
+        }
+    ],
+    "Deformation": [
+        {
+            "Code": "gnd:4011284-6",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Deformation",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Deformationstheorie"
+            ],
+            "Source": "Naas-Schmid"
+        },
+        {
+            "Code": "gnd:4409345-7",
+            "Classification Number": "19.4a",
+            "Classification Name": "Allgemeine Geologie, Geophysik",
+            "Name": "Deformation",
+            "Alternate Name": [
+                "Strain"
+            ],
+            "Related Subjects": [
+                "Strukturgeologie",
+                "Spannung"
+            ],
+            "Source": "Murawski"
+        }
+    ],
+    "Aufschluss": [
+        {
+            "Code": "gnd:4143418-3",
+            "Classification Number": "22.3",
+            "Classification Name": "Analytische Chemie und Untersuchungsmethoden",
+            "Name": "Aufschluss",
+            "Alternate Name": [],
+            "Related Subjects": [],
+            "Source": "Ro\u0308mpp"
+        },
+        {
+            "Code": "gnd:4143419-5",
+            "Classification Number": "19.4a",
+            "Classification Name": "Allgemeine Geologie, Geophysik",
+            "Name": "Aufschluss",
+            "Alternate Name": [
+                "Erdaufschluss"
+            ],
+            "Related Subjects": [
+                "Geologische Sta\u0308tte"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Ko\u0308rper": [
+        {
+            "Code": "gnd:4308063-7",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Ko\u0308rper",
+            "Alternate Name": [
+                "Field"
+            ],
+            "Related Subjects": [
+                "Fastko\u0308rper"
+            ],
+            "Source": "Naas-Schmid",
+            "Definition": "Nur verwenden, wenn kein engerer Begriff zutrifft, z.B. Algebraischer Ko\u0308rper"
+        },
+        {
+            "Code": "gnd:4031575-7",
+            "Classification Number": "26",
+            "Classification Name": "Anthropologie",
+            "Name": "Ko\u0308rper",
+            "Alternate Name": [
+                "Mensch",
+                "Menschlicher Ko\u0308rper",
+                "Corpus"
+            ],
+            "Related Subjects": [
+                "Leib"
+            ],
+            "Source": "Roche (3.Aufl.)"
+        },
+        {
+            "Code": "gnd:4164424-4",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Ko\u0308rper",
+            "Alternate Name": [
+                "Ko\u0308rperbild"
+            ],
+            "Related Subjects": [
+                "Mensch",
+                "Motiv"
+            ],
+            "Source": "SWL"
+        }
+    ],
+    "Verlegung": [
+        {
+            "Code": "gnd:4486032-8",
+            "Classification Number": "00",
+            "Classification Name": "Unspezifische Allgemeinw\u00f6rter",
+            "Name": "Verlegung",
+            "Alternate Name": [
+                "Verlegen",
+                "Umzug"
+            ],
+            "Related Subjects": [],
+            "Source": "Du. 3.",
+            "Definition": "Von einem bisher innegehabten Ort an einen anderen Ort verlegen, auch fu\u0308r Strafvollzug, Krankenhaus usw."
+        },
+        {
+            "Code": "gnd:4461764-1",
+            "Classification Number": "31.3b",
+            "Classification Name": "Bautechnik",
+            "Name": "Verlegung",
+            "Alternate Name": [
+                "Verlegen"
+            ],
+            "Related Subjects": [],
+            "Source": "Du.",
+            "Definition": "Im Sinn von verlegen (Du. 4.)"
+        }
+    ],
+    "Interferenz": [
+        {
+            "Code": "gnd:4197629-0",
+            "Classification Number": "00",
+            "Classification Name": "Unspezifische Allgemeinw\u00f6rter",
+            "Name": "Interferenz",
+            "Alternate Name": [
+                "Interferenzen"
+            ],
+            "Related Subjects": [],
+            "Source": "M",
+            "Definition": "Nach Mo\u0308glichkeit mit HZ absetzen"
+        },
+        {
+            "Code": "gnd:4162000-8",
+            "Classification Number": "21.3",
+            "Classification Name": "Elektrizit\u00e4t, Magnetismus, Optik",
+            "Name": "Interferenz",
+            "Alternate Name": [
+                "U\u0308berlagerung"
+            ],
+            "Related Subjects": [
+                "Interferenzerscheinung"
+            ],
+            "Source": "M 1."
+        }
+    ],
+    "Depression": [
+        {
+            "Code": "gnd:4011474-0",
+            "Classification Number": "27.13",
+            "Classification Name": "Neurologie, Psychiatrie",
+            "Name": "Depression",
+            "Alternate Name": [
+                "Depressionen"
+            ],
+            "Related Subjects": [
+                "Affektsto\u0308rung",
+                "Melancholie",
+                "Depressivita\u0308t"
+            ],
+            "Source": "M 1."
+        },
+        {
+            "Code": "gnd:4750746-9",
+            "Classification Number": "10.2da",
+            "Classification Name": "Wirtschaftskreislauf, Konjunktur",
+            "Name": "Depression",
+            "Alternate Name": [
+                "Wirtschaftsdepression",
+                "Wirtschaftliche Depression"
+            ],
+            "Related Subjects": [
+                "Konjunkturphase",
+                "Wirtschaftskrise",
+                "Rezession"
+            ],
+            "Source": "B 1996",
+            "Definition": "Im Konjunkturzyklus auf die Krise folgende Niedergangsperiode, in der im Gegensatz zur Rezession das Volkseinkommen in seiner Ho\u0308he absolut zuru\u0308ckgeht"
+        }
+    ],
+    "Gru\u0308ndung": [
+        {
+            "Code": "gnd:4137134-3",
+            "Classification Number": "31.3b",
+            "Classification Name": "Bautechnik",
+            "Name": "Gru\u0308ndung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Grundbau"
+            ],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4020642-7",
+            "Classification Number": "9.3c",
+            "Classification Name": "Gruppe, Organisationssoziologie, Interaktion",
+            "Name": "Gru\u0308ndung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Gru\u0308nder"
+            ],
+            "Source": "M 2."
+        }
+    ],
+    "Modernisierung": [
+        {
+            "Code": "gnd:4130981-9",
+            "Classification Number": "31.3a",
+            "Classification Name": "Architektur",
+            "Name": "Modernisierung",
+            "Alternate Name": [
+                "Bausanierung",
+                "Sanierung"
+            ],
+            "Related Subjects": [
+                "Sanierung",
+                "Bauen im Bestand"
+            ],
+            "Source": "Bau-W"
+        },
+        {
+            "Code": "gnd:4120755-5",
+            "Classification Number": "9.3b",
+            "Classification Name": "Bev\u00f6lkerung, Sozialstruktur, Soziale Situation, Soziale Bewegungen",
+            "Name": "Modernisierung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Sozialer Wandel",
+                "Sozioo\u0308konomischer Wandel",
+                "Entwicklung"
+            ],
+            "Source": "B 1986"
+        }
+    ],
+    "Norm": [
+        {
+            "Code": "gnd:4419668-4",
+            "Classification Number": "6.7",
+            "Classification Name": "Bibliothek, Information und Dokumentation",
+            "Name": "Norm",
+            "Alternate Name": [
+                "Normschrift"
+            ],
+            "Related Subjects": [],
+            "Source": "B 1986 1.",
+            "Definition": "Allgemein anerkannte Regel, Richtschnur."
+        },
+        {
+            "Code": "gnd:4172022-2",
+            "Classification Number": "6.7",
+            "Classification Name": "Bibliothek, Information und Dokumentation",
+            "Name": "Norm",
+            "Alternate Name": [
+                "Normen",
+                "Standard",
+                "Normenblatt",
+                "Normblatt",
+                "Leitlinie"
+            ],
+            "Related Subjects": [
+                "Normung",
+                "Richtlinie"
+            ],
+            "Source": "M 7."
+        }
+    ],
+    "Schriftsteller": [
+        {
+            "Code": "gnd:4121622-2",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Schriftsteller",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4053309-8",
+            "Classification Number": "12.1b",
+            "Classification Name": "Literarisches Leben",
+            "Name": "Schriftsteller",
+            "Alternate Name": [
+                "Dichter",
+                "Literaturproduzent",
+                "Literat",
+                "Homme de lettres"
+            ],
+            "Related Subjects": [
+                "Autor",
+                "Literatur",
+                "Schriftstellerin"
+            ],
+            "Source": "M"
+        }
+    ],
+    "Deutschlandforschung": [
+        {
+            "Code": "gnd:4288305-2",
+            "Classification Number": "19.1a",
+            "Classification Name": "Geografie, Heimat- und L\u00e4nderkunde (Allgemeines)",
+            "Name": "Deutschlandforschung",
+            "Alternate Name": [
+                "DDR-Forschung"
+            ],
+            "Related Subjects": [
+                "Regionale Geografie",
+                "Kulturraumforschung"
+            ],
+            "Source": "analog zu Deutschlandbild <DDR>",
+            "Definition": "Benutzt fu\u0308r die Disziplin nach RSWK \u00a7 213 bb; nicht identisch mit Deutschland <DDR> ; Forschung"
+        },
+        {
+            "Code": "gnd:4288304-0",
+            "Classification Number": "19.1a",
+            "Classification Name": "Geografie, Heimat- und L\u00e4nderkunde (Allgemeines)",
+            "Name": "Deutschlandforschung",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Regionale Geografie",
+                "Kulturraumforschung"
+            ],
+            "Source": "Vorlage",
+            "Definition": "Benutzt fu\u0308r die Disziplin nach RSWK \u00a7 213 bb, nicht identisch mit Deutschland ; Forschung"
+        }
+    ],
+    "Maschine": [
+        {
+            "Code": "gnd:4198902-8",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Maschine",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Industrie",
+                "Motiv"
+            ],
+            "Source": "analog"
+        },
+        {
+            "Code": "gnd:4037786-6",
+            "Classification Number": "31.6",
+            "Classification Name": "Maschinenbau",
+            "Name": "Maschine",
+            "Alternate Name": [
+                "Maschinen"
+            ],
+            "Related Subjects": [],
+            "Source": "M"
+        }
+    ],
+    "Gruppe": [
+        {
+            "Code": "gnd:4022378-4",
+            "Classification Number": "9.3c",
+            "Classification Name": "Gruppe, Organisationssoziologie, Interaktion",
+            "Name": "Gruppe",
+            "Alternate Name": [
+                "Soziale Gruppe",
+                "Team",
+                "Personengruppe",
+                "Gruppen"
+            ],
+            "Related Subjects": [],
+            "Source": "M"
+        },
+        {
+            "Code": "gnd:4022379-6",
+            "Classification Number": "28",
+            "Classification Name": "Mathematik",
+            "Name": "Gruppe",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Gruppentheorie"
+            ],
+            "Source": "Naas-Schmid, Au"
+        }
+    ],
+    "Arbeitsweise": [
+        {
+            "Code": "gnd:4405042-2",
+            "Classification Number": "31.1a",
+            "Classification Name": "Technik (Allgemeines)",
+            "Name": "Arbeitsweise",
+            "Alternate Name": [
+                "Arbeitsprinzip",
+                "Funktion",
+                "Funktionsprinzip",
+                "Funktionsweise"
+            ],
+            "Related Subjects": [],
+            "Source": "DOMA-Thes."
+        },
+        {
+            "Code": "gnd:4124564-7",
+            "Classification Number": "1",
+            "Classification Name": "Allgemeines, Interdisziplin\u00e4re Allgemeinw\u00f6rter",
+            "Name": "Arbeitsweise",
+            "Alternate Name": [
+                "Individuelle Arbeitsweise"
+            ],
+            "Related Subjects": [
+                "Arbeitstechnik"
+            ],
+            "Source": "Du."
+        }
+    ],
+    "Atem": [
+        {
+            "Code": "gnd:4112611-7",
+            "Classification Number": "3.1",
+            "Classification Name": "Allgemeine und vergleichende Religionswissenschaft, Nichtchristliche Religionen",
+            "Name": "Atem",
+            "Alternate Name": [
+                "Atemlehre"
+            ],
+            "Related Subjects": [
+                "Prana"
+            ],
+            "Source": "Kro\u0308ner Rel."
+        },
+        {
+            "Code": "gnd:4201477-3",
+            "Classification Number": "12.4",
+            "Classification Name": "Literarische Motive, Stoffe, Gestalten",
+            "Name": "Atem",
+            "Alternate Name": [],
+            "Related Subjects": [
+                "Motiv"
+            ],
+            "Source": "analog"
+        }
+    ]
+}
