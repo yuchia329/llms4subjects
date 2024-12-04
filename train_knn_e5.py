@@ -1,18 +1,18 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
 from sklearn.metrics.pairwise import cosine_similarity
-from data_handler import load_dev_input_label
-from try_4_metadata import get_subject_metadata, merge_subject_metadata
+from data_handler import load_dev_data
+from label_metadata import get_subject_metadata, concat_subject_metadata
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 DEVICE = "cuda:5" if torch.cuda.is_available() else "cpu"
 LABEL_SIZE=5
-df = load_dev_input_label(label_size=LABEL_SIZE, records_size=500)
+df = load_dev_data(label_size=LABEL_SIZE, records_size=500)
 GND_ids = df["subjects"].str.split(by=" ").explode()
 unique_GNDs = set(GND_ids)
 print(unique_GNDs)
 subject_metadata_mapping, _ = get_subject_metadata(unique_GNDs)
-merge_labels = merge_subject_metadata(list(subject_metadata_mapping.values()))
+merge_labels = concat_subject_metadata(list(subject_metadata_mapping.values()))
 # Load E5 model and tokenizer
 model_name = "intfloat/e5-mistral-7b-instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)

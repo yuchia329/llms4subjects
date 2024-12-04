@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import json
 
-def merge_subject_metadata(subject_metadata_array):
+def concat_subject_metadata(subject_metadata_array):
     merge_array = []
     for item in subject_metadata_array:
         metadata_text = (
@@ -38,10 +38,7 @@ def get_subject_metadata(unique_label_set):
         return subject_metadata_mapping, category_subject_mapping
 
 def generateLabelMetadata(unique_label_set):
-    # Load SentenceTransformer model
     embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-
-    # Combine subject metadata into a single text
     with open("GND_dataset/GND-Subjects-all.json", mode="r") as file:
         label_mapping = json.load(file)
         subjects_metadata = []
@@ -57,7 +54,6 @@ def generateLabelMetadata(unique_label_set):
             }
             subjects_metadata.append(core_label_metadata)
 
-    # Create embeddings
     subject_embeddings = {}
     for subject in subjects_metadata:
         metadata_text = (

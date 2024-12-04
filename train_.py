@@ -2,14 +2,14 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from data_handler import load_training_label, load_dev_label, load_dev_input_label
-from label_metadata import get_subject_metadata, merge_subject_metadata
+from data_handler import load_unique_training_label, load_unique_dev_label, load_dev_data
+from label_metadata import get_subject_metadata, concat_subject_metadata
 
 LABEL_SIZE = 5
 DEV_RECORD_SIZE = 15
 # Sentences we want sentence embeddings for
 sentences = ['This is an example sentence', 'Each sentence is converted']
-unique_label_set = load_dev_label(records_size=DEV_RECORD_SIZE)
+unique_label_set = load_unique_dev_label(records_size=DEV_RECORD_SIZE)
 subject_description_mapping, category_subject_mapping = get_subject_metadata(unique_label_set)
 print(unique_label_set)
 subject_position_mapping = {}
@@ -46,14 +46,14 @@ def get_embeddings(sentences):
 
     return sentence_embeddings
 
-df = load_dev_input_label(label_size=LABEL_SIZE, records_size=DEV_RECORD_SIZE)
+df = load_dev_data(label_size=LABEL_SIZE, records_size=DEV_RECORD_SIZE)
 x_true = df["input"].to_list()
 y_true = [label_str.split(" ") for label_str in df["subjects"].to_list()]
 
 y_true_flat = [subject for item in y_true for subject in item]
 
 subject_descriptions = list(subject_description_mapping.values())
-subject_metadata = merge_subject_metadata(subject_descriptions)
+subject_metadata = concat_subject_metadata(subject_descriptions)
 
 for index, x in enumerate(x_true):
     # Compute embeddings

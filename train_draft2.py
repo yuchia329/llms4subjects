@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW
-from data_handler import load_training_data
+from data_handler import load_training_data_one_hot_labelsets
 from sklearn.preprocessing import MultiLabelBinarizer
 # Load the E5 model and tokenizer
 model_name = "intfloat/e5-mistral-7b-instruct"
@@ -38,7 +38,7 @@ class MultiLabelDataset(Dataset):
             "labels": torch.tensor(labels, dtype=torch.float32)  # Multi-label vector
         }
 
-df = load_training_data()
+df = load_training_data_one_hot_labelsets()
 
 # Example data
 texts = df["input"]

@@ -3,14 +3,14 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModel
 import numpy as np
 import os
-from data_handler import load_training_data
+from data_handler import load_training_data_one_hot_labelsets
 from label_metadata import generateLabelMetadata
 import torch.nn as nn
 from torch.optim import AdamW
 import time
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5"
-df, unique_label_set = load_training_data()
+df, unique_label_set = load_training_data_one_hot_labelsets()
 # Define constants
 MODEL_NAME = "FacebookAI/xlm-roberta-base"  # "xlm-roberta-base" "bert-base-multilingual-cased"
 NUM_LABELS = len(unique_label_set)  # Number of unique subjects

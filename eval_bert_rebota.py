@@ -3,15 +3,15 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW, AutoModel
 import numpy as np
 import os
-from data_handler import load_training_label, load_dev_data
+from data_handler import load_unique_training_label, load_dev_data_one_hot
 from label_metadata import generateLabelMetadata
 import torch.nn as nn
 import time
 
 LABEL_SIZE = 1
 os.environ["CUDA_VISIBLE_DEVICES"] = "4"
-df = load_dev_data(label_size=LABEL_SIZE)
-unique_label_set = load_training_label()
+df = load_dev_data_one_hot(label_size=LABEL_SIZE)
+unique_label_set = load_unique_training_label()
 
 NUM_LABELS = len(unique_label_set)  # Number of unique subjects
 BATCH_SIZE = 64

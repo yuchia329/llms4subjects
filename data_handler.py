@@ -1,48 +1,18 @@
-import json
 import polars as pl
 from collections import Counter
 
-def load_training_data():
-    # with open("GND_dataset/GND-Subjects-all.json", mode="r") as file:
-    #     label_mapping = json.load(file)
-
-    df = pl.read_csv("TIBKAT_dataset/core_train.csv")
+def load_training_data_one_hot_labelsets():
+    file_path = "TIBKAT_dataset/core_train.csv"
+    df = pl.read_csv(file_path)
+    # combine title + abstract
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
     )
     df = df["input", "subjects"]
-    unique_labels = set()
-    def filter_unique_labels(label_str):
-        if label_str is None:
-            return None
-        labels = label_str.split()
-        for label in labels:
-            unique_labels.add(label)
-    df.with_columns(
-        pl.col("subjects").map_elements(lambda x: filter_unique_labels(x), return_dtype=pl.Utf8).alias("subjects"))
-    # label_set = set()
-    # label_name_set = set()
-    # label_maps = {}
-    # def replace_labels(label_str, mapping):
-        
-    #     if label_str is None:
-    #         return None
-    #     labels = label_str.split()
-    #     for label in labels:
-    #         label_set.add(label)
-    #         classification_name = mapping.get(label).get("Classification Name")
-    #         name = mapping.get(label).get("Name")
-    #         label_name = f'{classification_name}_{name}'
-    #         if label_name not in label_maps:
-    #             label_maps[label_name] = set()
-    #         label_maps[label_name].add(label)
-        
-    #     return " ".join(mapping.get(label, label).get("Name") for label in label_str.split())
-
-    # df2 = df.with_columns(
-    #     pl.col("subjects").map_elements(lambda x: replace_labels(x, label_mapping), return_dtype=pl.Utf8).alias("subjects")
-    # )
-    # print(len(label_set))
+    
+    unique_labels = get_TIBKAT_unique_labels(df)
+    
+    # separate laels can create one hot pivot table
     df = df.with_columns(
         pl.col('subjects').str.split(' '), 
         pl.lit(1).alias('__one__')
@@ -50,9 +20,8 @@ def load_training_data():
 
     return df, unique_labels
 
-def load_training_label():
-    df = pl.read_csv("TIBKAT_dataset/core_train.csv")
-    # df = df["subjects"]
+# generate unique_labels set
+def get_TIBKAT_unique_labels(dataframe):
     unique_labels = set()
     def filter_unique_labels(label_str):
         if label_str is None:
@@ -60,45 +29,40 @@ def load_training_label():
         labels = label_str.split()
         for label in labels:
             unique_labels.add(label)
-    
-    df.with_columns(
+    dataframe.with_columns(
         pl.col("subjects").map_elements(lambda x: filter_unique_labels(x), return_dtype=pl.Utf8).alias("subjects"))
     return unique_labels
 
-def load_dev_label(records_size=None):
-    df = pl.read_csv("TIBKAT_dataset/core_dev.csv")
-    # df = df["subjects"]
+
+def load_unique_training_label():
+    file_path = "TIBKAT_dataset/core_train.csv"
+    df = pl.read_csv(file_path)
+    unique_labels = get_TIBKAT_unique_labels(df)
+    return unique_labels
+
+
+def load_unique_dev_label(records_size=None):
+    file_path = "TIBKAT_dataset/core_dev.csv"
+    df = pl.read_csv(file_path)
     if records_size is not None:
         df = df[:records_size]
     
-    unique_labels = set()
-    def filter_unique_labels(label_str):
-        if label_str is None:
-            return None
-        labels = label_str.split()
-        for label in labels:
-            unique_labels.add(label)
-    
-    df.with_columns(
-        pl.col("subjects").map_elements(lambda x: filter_unique_labels(x), return_dtype=pl.Utf8).alias("subjects"))
+    unique_labels = get_TIBKAT_unique_labels(df)
     return unique_labels
 
-def load_dev_data(label_size = None):
+def load_dev_data_one_hot(label_size = None):
     df = pl.read_csv("TIBKAT_dataset/core_dev.csv", row_index_name="id")
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
     )
     if label_size:
-        # df = df.filter(
-        #     df["subjects"].str.split(" ").arr.lengths() == label_size
-        # )
         df = df.filter(
             pl.col("subjects").str.split(by=" ").list.len()==label_size
             )
-    print(df)
+    # print(df)
 
     df = df["id", "input", "subjects"]
-    all_labels = load_training_label()
+    all_labels = load_unique_training_label()
     
     # Explode labels into multiple rows for efficient matching
     df_explode = df.with_columns(pl.col("subjects").str.split(" ")).explode("subjects")
@@ -128,7 +92,8 @@ def load_dev_data(label_size = None):
     print(df_result)
     return df_result
 
-def load_dev_input_label(label_size=None, records_size=None):
+
+def load_dev_data(label_size=None, records_size=None):
     df = pl.read_csv("TIBKAT_dataset/core_dev.csv", row_index_name="id")
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
@@ -138,33 +103,9 @@ def load_dev_input_label(label_size=None, records_size=None):
         df = df[:records_size]
 
     if label_size:
-        # df = df.filter(
-        #     df["subjects"].str.split(" ").arr.lengths() == label_size
-        # )
         df = df.filter(
             pl.col("subjects").str.split(by=" ").list.len()==label_size
             )
-    # print(df)
     return df
 
 
-def list_duplicate_subjects():
-    df = pl.read_csv("TIBKAT_dataset/core_dev.csv")
-    data = df["subjects"].str.split(by=" ").explode()
-    
-    with open("GND_dataset/GND-Subjects-all.json", mode="r") as file:
-        label_mapping = json.load(file)
-        name_id_mapping = {}
-        for id in data:
-            value = name_id_mapping.get(label_mapping[id]["Name"])
-            if value is None:
-                name_id_mapping[label_mapping[id]["Name"]] = set([id])#[label_mapping[id]]
-            else:
-                name_id_mapping[label_mapping[id]["Name"]].add(id)
-        
-        filtered_data = {key: [label_mapping[gnd] for gnd in value] for key, value in name_id_mapping.items() if len(value) > 1}
-        with open('duplicate_labels.json', 'w') as f:
-            json.dump(filtered_data, f)
-
-
-# list_duplicate_subjects()
