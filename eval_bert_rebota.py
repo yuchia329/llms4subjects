@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Adam
 import numpy as np
 import os
 from data_handler import load_training_label, load_dev_data
-from try_4_metadata import generateLabelMetadata
+from label_metadata import generateLabelMetadata
 import torch.nn as nn
 import time
 

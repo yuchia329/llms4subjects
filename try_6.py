@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from data_handler import load_training_label, load_dev_label, load_dev_input_label
-from try_4_metadata import get_subject_metadata, merge_subject_metadata
+from label_metadata import get_subject_metadata, merge_subject_metadata
 
 LABEL_SIZE = 5
 DEV_RECORD_SIZE = 15
