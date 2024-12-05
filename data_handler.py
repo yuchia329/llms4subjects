@@ -18,6 +18,13 @@ def load_training_data_one_hot_labelsets():
         pl.lit(1).alias('__one__')
         ).explode('subjects').pivot(on='subjects', values='__one__', aggregate_function='first').fill_null(0)
 
+    # reduce label size
+    # label_size = len(unique_labels)
+    # print("label_size: ", label_size)
+    # columns_to_drop = df.columns[5001:]
+    # df = df.drop(columns_to_drop)
+    # print("df.shape: ", df.shape)
+    # unique_labels = set(df.columns[1:])
     return df, unique_labels
 
 # generate unique_labels set
@@ -89,7 +96,7 @@ def load_dev_data_one_hot(label_size = None):
 
     # Reorder columns to match the order of all_labels
     df_result = df_result.select(["input"] + list(all_labels))
-    print(df_result)
+    # print(df_result)
     return df_result
 
 

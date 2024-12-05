@@ -8,8 +8,8 @@ def concat_subject_metadata(subject_metadata_array):
             item.get("Name")
             + " " + item.get("Classification Name")
             + " " + " ".join(item.get("Alternate Name", []))
-            # + " " + " ".join(item.get("Related Subjects", []))
-            # + " " + item.get("Definition","")
+            + " " + " ".join(item.get("Related Subjects", []))
+            + " " + item.get("Definition","")
         )
         merge_array.append(metadata_text)
     return merge_array
