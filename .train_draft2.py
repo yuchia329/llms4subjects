@@ -1,14 +1,17 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW
-from data_handler import load_training_data
+from data_handler import load_training_data_one_hot_labelsets
 from sklearn.preprocessing import MultiLabelBinarizer
 # Load the E5 model and tokenizer
 model_name = "intfloat/e5-mistral-7b-instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=24473)  # 200,000 labels
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_name, num_labels=24473)  # 200,000 labels
 
 # Custom Dataset
+
+
 class MultiLabelDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=512):
         self.texts = texts
@@ -35,15 +38,17 @@ class MultiLabelDataset(Dataset):
         return {
             "input_ids": encoded["input_ids"].squeeze(0),
             "attention_mask": encoded["attention_mask"].squeeze(0),
-            "labels": torch.tensor(labels, dtype=torch.float32)  # Multi-label vector
+            # Multi-label vector
+            "labels": torch.tensor(labels, dtype=torch.float32)
         }
 
-df = load_training_data()
+
+df = load_training_data_one_hot_labelsets()
 
 # Example data
 texts = df["input"]
 labels = df[1:]
-# labels = df 
+# labels = df
 # labels = [
 #     [1, 0, 0, ..., 0],  # Sparse label vector for example 1
 #     [0, 1, 0, ..., 0]   # Sparse label vector for example 2
@@ -86,7 +91,8 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
 
-    print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(dataloader):.4f}")
+    print(
+        f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(dataloader):.4f}")
 
 # Save the fine-tuned model
 model.save_pretrained("fine_tuned_model")

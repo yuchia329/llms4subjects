@@ -4,8 +4,8 @@ from transformers import AutoTokenizer, AutoModel
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from scipy.sparse import csr_matrix
-from data_handler import load_training_data
-from label_metadata import get_subject_metadata, merge_subject_metadata
+from data_handler import load_training_data_one_hot_labelsets
+from label_metadata import get_subject_metadata, concat_subject_metadata
 from sklearn.model_selection import train_test_split
 from sentence_transformers import SentenceTransformer
 import numpy as np
@@ -21,19 +21,22 @@ model_name = "bert-base-multilingual-cased"
 # --------------------------
 # 1. Custom Dataset
 # --------------------------
+
+
 class MultiLabelDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len):
         self.texts = texts
         self.labels = labels  # Sparse or dense matrix
         self.tokenizer = tokenizer
         self.max_len = max_len
-    
+
     def __len__(self):
         return self.labels.shape[0]
 
     def __getitem__(self, idx):
         text = self.texts[idx]
-        label = torch.tensor(self.labels[idx].toarray().flatten(), dtype=torch.float32)
+        label = torch.tensor(
+            self.labels[idx].toarray().flatten(), dtype=torch.float32)
         encoding = self.tokenizer(
             text,
             max_length=self.max_len,
@@ -73,7 +76,8 @@ class LabelAwareMultiLabelClassifier(nn.Module):
     def __init__(self, text_model, num_labels, label_features=None, edges=None):
         super(LabelAwareMultiLabelClassifier, self).__init__()
         self.text_model = text_model  # Pretrained language model
-        self.label_graph_refiner = LabelGraphRefiner(num_labels, label_features, edges)
+        self.label_graph_refiner = LabelGraphRefiner(
+            num_labels, label_features, edges)
         self.classifier = nn.Linear(
             text_model.config.hidden_size + 64,  # Include refined label embedding size
             num_labels
@@ -84,12 +88,15 @@ class LabelAwareMultiLabelClassifier(nn.Module):
         refined_label_embeddings = self.label_graph_refiner()
 
         # Get text embeddings from the pretrained model
-        text_outputs = self.text_model(input_ids=input_ids, attention_mask=attention_mask)
-        text_embeddings = text_outputs.last_hidden_state[:, 0]  # CLS token (batch_size, embedding_dim)
+        text_outputs = self.text_model(
+            input_ids=input_ids, attention_mask=attention_mask)
+        # CLS token (batch_size, embedding_dim)
+        text_embeddings = text_outputs.last_hidden_state[:, 0]
 
         # Expand refined label embeddings to match batch size
         batch_size = text_embeddings.size(0)
-        expanded_label_embeddings = refined_label_embeddings.mean(dim=0).unsqueeze(0).repeat(batch_size, 1)
+        expanded_label_embeddings = refined_label_embeddings.mean(
+            dim=0).unsqueeze(0).repeat(batch_size, 1)
 
         # Combine text and label embeddings
         combined_embeddings = torch.cat(
@@ -113,7 +120,7 @@ class LabelAwareMultiLabelClassifier(nn.Module):
 def compute_metrics(logits, labels, k=5):
     """
     Compute Precision@K, Recall@K, and F1@K for multi-label classification.
-    
+
     Args:
         logits: numpy.ndarray of shape (num_samples, num_labels)
             Predicted logits or probabilities for each label.
@@ -121,45 +128,48 @@ def compute_metrics(logits, labels, k=5):
             Ground truth binary label matrix.
         k: int
             Number of top predictions to consider for metrics.
-    
+
     Returns:
         metrics: dict
             Dictionary containing P@K, R@K, and F1@K scores.
     """
     # Sigmoid to convert logits to probabilities
     probabilities = 1 / (1 + np.exp(-logits))
-    
+
     # Get the indices of the top K predictions for each record
     top_k_indices = np.argsort(-probabilities, axis=1)[:, :k]
-    
+
     # Initialize counters
     precision_scores = []
     recall_scores = []
-    
+
     # Loop through each record
     for i in range(labels.shape[0]):
         true_labels = np.where(labels[i] == 1)[0]  # Indices of true labels
-        predicted_top_k = top_k_indices[i]        # Indices of top K predictions
-        
+        # Indices of top K predictions
+        predicted_top_k = top_k_indices[i]
+
         # Calculate intersection
-        true_positives = len(set([int(label) for label in true_labels]) & set([label.item() for label in predicted_top_k]))
+        true_positives = len(set([int(label) for label in true_labels]) & set(
+            [label.item() for label in predicted_top_k]))
 
         # Precision@K for this record
         precision = true_positives / k
         precision_scores.append(precision)
-        
+
         # Recall@K for this record
-        recall = true_positives / len(true_labels) if len(true_labels) > 0 else 0
+        recall = true_positives / \
+            len(true_labels) if len(true_labels) > 0 else 0
         recall_scores.append(recall)
-    
+
     # Average Precision@K and Recall@K across all records
     avg_precision = np.mean(precision_scores)
     avg_recall = np.mean(recall_scores)
-    
+
     # Compute F1@K
     avg_f1 = (2 * avg_precision * avg_recall / (avg_precision + avg_recall)
               if avg_precision + avg_recall > 0 else 0)
-    
+
     res = {
         "Precision@K": avg_precision,
         "Recall@K": avg_recall,
@@ -172,6 +182,8 @@ def compute_metrics(logits, labels, k=5):
 # --------------------------
 # 5. Training and Evaluation
 # --------------------------
+
+
 def train(model, train_loader, val_loader, optimizer, device, num_epoch):
     for epoch in range(num_epoch):
         model.train()
@@ -182,7 +194,8 @@ def train(model, train_loader, val_loader, optimizer, device, num_epoch):
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            outputs = model(input_ids=input_ids,
+                            attention_mask=attention_mask, labels=labels)
             loss = outputs["loss"]
             total_loss += loss.item()
 
@@ -190,7 +203,8 @@ def train(model, train_loader, val_loader, optimizer, device, num_epoch):
             loss.backward()
             optimizer.step()
         train_loss = total_loss / len(train_loader)
-        print(f"Epoch {epoch + 1}: Avg Train Loss = {train_loss:.6f} Duration: {time.time()-start:.2f}")
+        print(f"Epoch {
+              epoch + 1}: Avg Train Loss = {train_loss:.6f} Duration: {time.time()-start:.2f}")
         model.eval()
         total_loss = 0
         start = time.time()
@@ -200,12 +214,14 @@ def train(model, train_loader, val_loader, optimizer, device, num_epoch):
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["labels"].to(device)
 
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                outputs = model(input_ids=input_ids,
+                                attention_mask=attention_mask, labels=labels)
                 loss = outputs["loss"]
                 total_loss += loss.item()
                 val_loss = total_loss / len(val_loader)
-            print(f"Epoch {epoch + 1}: Avg Vali Loss = {val_loss:.6f} Duration: {time.time()-start:.2f}")
-        
+            print(f"Epoch {
+                  epoch + 1}: Avg Vali Loss = {val_loss:.6f} Duration: {time.time()-start:.2f}")
+
 
 def evaluate(model, data_loader, device):
     model.eval()
@@ -233,16 +249,17 @@ def evaluate(model, data_loader, device):
 # 6. Example Usage
 # --------------------------
 # Example data
-df, unique_labels = load_training_data()
+df, unique_labels = load_training_data_one_hot_labelsets()
 texts_train = df["input"]
 labels = df.drop("input")
 x_train, x_test, y_train, y_test = train_test_split(
-        texts_train, labels, test_size=0.3, random_state=42)
+    texts_train, labels, test_size=0.3, random_state=42)
 
 x_val, x_test, y_val, y_test = train_test_split(
-        x_test, y_test, test_size=0.5, random_state=42)
+    x_test, y_test, test_size=0.5, random_state=42)
 
-labels_train = csr_matrix(y_train.to_numpy().tolist())  # Replace with your sparse label matrix
+# Replace with your sparse label matrix
+labels_train = csr_matrix(y_train.to_numpy().tolist())
 labels_val = csr_matrix(y_val.to_numpy().tolist())
 labels_test = csr_matrix(y_test.to_numpy().tolist())
 
@@ -260,11 +277,14 @@ text_model = AutoModel.from_pretrained(model_name)
 
 # Generate label embeddings using SentenceTransformer
 subject_metadata_mapping, label_hierarchy = get_subject_metadata(unique_labels)
-label_descriptions = merge_subject_metadata(list(subject_metadata_mapping.values()))
+label_descriptions = concat_subject_metadata(
+    list(subject_metadata_mapping.values()))
 embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-label_features = torch.tensor(embedding_model.encode(label_descriptions), dtype=torch.float32).to(device)
+label_features = torch.tensor(embedding_model.encode(
+    label_descriptions), dtype=torch.float32).to(device)
 
-print(f"Label embeddings shape: {label_features.shape}")  # Should be (num_labels, embedding_dim)
+# Should be (num_labels, embedding_dim)
+print(f"Label embeddings shape: {label_features.shape}")
 
 # Flatten labels into a list
 flattened_list = []
@@ -282,7 +302,8 @@ for parent, children in label_hierarchy.items():
     for child in children:
         child_idx = label_to_index[child]
         edges.append((parent_idx, child_idx))  # Parent -> Child
-        edges.append((child_idx, parent_idx))  # Child -> Parent (bidirectional)
+        # Child -> Parent (bidirectional)
+        edges.append((child_idx, parent_idx))
 
 # Convert to PyTorch tensor and transpose
 edges = torch.tensor(edges, dtype=torch.long).t()
@@ -297,13 +318,13 @@ edges = torch.cat([edges, self_loops], dim=1).to(device)
 num_labels = len(label_descriptions)
 embedding_dim = label_features.shape[1]
 # label_features = torch.randn(num_labels, embedding_dim)
-model = LabelAwareMultiLabelClassifier(text_model, num_labels, label_features, edges).to(device)
+model = LabelAwareMultiLabelClassifier(
+    text_model, num_labels, label_features, edges).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
-NUM_EPOCH=15
-train(model=model, train_loader=train_loader, val_loader=val_loader, optimizer=optimizer, device=device, num_epoch=NUM_EPOCH)
+NUM_EPOCH = 15
+train(model=model, train_loader=train_loader, val_loader=val_loader,
+      optimizer=optimizer, device=device, num_epoch=NUM_EPOCH)
 evaluate(model=model, data_loader=test_loader, device=device)
-
-
 
 
 # --------------------------
@@ -312,10 +333,3 @@ evaluate(model=model, data_loader=test_loader, device=device)
 # torch.save(model.state_dict(), "multi_label_classifier.pth")
 # model.save_pretrained("xlm-roberta-base")
 # tokenizer.save_pretrained("tokenizer")
-
-
-
-
-
-
-

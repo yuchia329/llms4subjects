@@ -3,16 +3,17 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModel
 import numpy as np
 import os
-from data_handler import load_training_data
+from data_handler import load_training_data_one_hot_labelsets
 from label_metadata import generateLabelMetadata
 import torch.nn as nn
 from torch.optim import AdamW
 import time
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5"
-df, unique_label_set = load_training_data()
+df, unique_label_set = load_training_data_one_hot_labelsets()
 # Define constants
-MODEL_NAME = "FacebookAI/xlm-roberta-base"  # "xlm-roberta-base" "bert-base-multilingual-cased"
+# "xlm-roberta-base" "bert-base-multilingual-cased"
+MODEL_NAME = "FacebookAI/xlm-roberta-base"
 NUM_LABELS = len(unique_label_set)  # Number of unique subjects
 BATCH_SIZE = 32
 MAX_LEN = 512
@@ -23,6 +24,8 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModel.from_pretrained(MODEL_NAME, num_labels=NUM_LABELS).to(DEVICE)
 
 # Custom Dataset
+
+
 class MultiLabelDataset(Dataset):
     def __init__(self, articles, labels, tokenizer, max_len=MAX_LEN):
         """
@@ -66,12 +69,15 @@ labels = df.drop("input")
 # Convert subject_embeddings to a tensor
 subject_embeddings = generateLabelMetadata(unique_label_set)
 # subject_codes = list(subject_embeddings.keys())
-subject_tensor = torch.tensor(np.stack(list(subject_embeddings.values()))).to(DEVICE)  # Shape: (NUM_LABELS, EMBEDDING_DIM)
+subject_tensor = torch.tensor(np.stack(list(subject_embeddings.values()))).to(
+    DEVICE)  # Shape: (NUM_LABELS, EMBEDDING_DIM)
 # Create dataset and dataloader
 dataset = MultiLabelDataset(texts, labels, tokenizer)
 dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
 # Linear layers for dimension alignment
+
+
 class ProjectionMapper(nn.Module):
     def __init__(self, bert_dim=768, minilm_dim=384, shared_dim=512):
         super(ProjectionMapper, self).__init__()
@@ -83,10 +89,12 @@ class ProjectionMapper(nn.Module):
         minilm_shared = self.minilm_projection(minilm_embeddings)
         return bert_shared, minilm_shared
 
+
 mapper = ProjectionMapper().to(DEVICE)
 
 # Optimizer and loss
-optimizer = AdamW(list(model.parameters()) + list(mapper.parameters()), lr=5e-5)
+optimizer = AdamW(list(model.parameters()) +
+                  list(mapper.parameters()), lr=5e-5)
 criterion = torch.nn.BCEWithLogitsLoss()
 # Training loop
 EPOCHS = 5
@@ -104,13 +112,15 @@ for epoch in range(EPOCHS):
 
         # Get BERT embeddings
         outputs = model(input_ids, attention_mask=attention_mask)
-        bert_embeddings = outputs.last_hidden_state[:, 0, :]  # CLS token embeddings
+        # CLS token embeddings
+        bert_embeddings = outputs.last_hidden_state[:, 0, :]
 
         # Map BERT embeddings to shared space
         bert_shared, subject_shared = mapper(bert_embeddings, subject_tensor)
 
         # Compute similarity scores
-        logits = torch.matmul(bert_shared, subject_shared.T)  # Shape: (batch_size, NUM_LABELS)
+        # Shape: (batch_size, NUM_LABELS)
+        logits = torch.matmul(bert_shared, subject_shared.T)
 
         # Compute loss
         loss = criterion(logits, labels)
@@ -120,7 +130,8 @@ for epoch in range(EPOCHS):
         loss.backward()
         optimizer.step()
     print('duration: ', time.time() - start)
-    print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {total_loss / len(dataloader):.6f}")
+    print(
+        f"Epoch {epoch + 1}/{EPOCHS}, Loss: {total_loss / len(dataloader):.6f}")
 
 # Save the fine-tuned model
 model.save_pretrained("fine_tuned_model_xlm_64")
