@@ -165,3 +165,13 @@ fine_tuned_model*
 GND
 TIBKAT
 __pycache__
+
+# Datasets — rebuild with: python build_tibkat_csv.py
+TIBKAT_dataset/*.csv
+GND_dataset/*.json
+
+# Sparse clone of the official release, fetched by the rebuild
+.cache/
+
+# Pipeline artifacts: embeddings, indexes, predictions, adapters, caches
+artifacts/
