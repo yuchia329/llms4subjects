@@ -14,10 +14,12 @@ the interface is the one the other retrievers implement.
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done — 1f2167f, which a concurrent agent's commit for ticket 05 swept this
+work into; the lexical retriever, its tests and `configs/rung1-lexical.yaml` are all in
+that commit rather than one of their own.
 
-- [ ] Lexical matching over label strings returns scored candidates through the shared retriever interface
-- [ ] Where the encoder provides sparse term weights natively, they are used rather than a separate index
-- [ ] Standalone recall is recorded, split by document language
-- [ ] The German and English recall gap is reported explicitly in the results document
-- [ ] The retriever is toggleable by configuration without touching other stages
+- [x] Lexical matching over label strings returns scored candidates through the shared retriever interface
+- [x] Where the encoder provides sparse term weights natively, they are used rather than a separate index
+- [x] Standalone recall is recorded, split by document language
+- [x] The German and English recall gap is reported explicitly in the results document
+- [x] The retriever is toggleable by configuration without touching other stages
