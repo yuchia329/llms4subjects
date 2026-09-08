@@ -1,0 +1,79 @@
+# Rung 1, plus the smaller of the two screened cross-encoders (ticket 12).
+#
+#   python scripts/rerank_report.py configs/rung1-rerank-base.yaml
+#
+# The screening pair for configs/rung1-rerank.yaml: same candidates, same label
+# text, a reranker half the size. Screening two off-the-shelf models before
+# asking for GPU time is the same logic ticket 09 applies to the encoders.
+name: rung1-e5-base-rerank-base
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+reranker:
+  enabled: true
+  # XLM-RoBERTa-base, 278M parameters, released 2023-09-11 and last committed
+  # 2024-06-24 — both inside the 2025-01-31 model cutoff (docs/spec.md), which
+  # reference/model_releases.json records and pins the loaded revision for. Half
+  # the parameters of the v2-m3 model above and trained on a narrower language
+  # mixture, which is exactly what makes it worth measuring: if it matches the
+  # larger one, the larger one's wall clock is not buying anything.
+  model: BAAI/bge-reranker-base
+  max_length: 512
+  batch_size: 32
+  # The whole fused candidate list in, the submission's 50 out. `input_k` is
+  # the cost of the stage: 100 pairs per record through a model that reads both
+  # sides jointly.
+  input_k: 100
+  output_k: 50
+  # The screened settings, from
+  #
+  #   python scripts/rerank_report.py configs/rung1-rerank-base.yaml \
+  #     --sample 300 --query label --mix fuse --sweep-mix
+  #
+  # on a 300-record stratified dev sample, selecting on micro R@10 as
+  # everywhere else. The heading as the query beats the document as the query
+  # by 0.047 P@5; fusing the cross-encoder's order with the retrieval order
+  # beats replacing it by 0.045 P@5 and 0.096 R@10; and `mix_weight` 1.0 is the
+  # maximum of a curve that rises and falls either side of it. See
+  # docs/results.md.
+  query: label
+  mix: fuse
+  mix_weight: 1.0
+
+notes: >
+  The smaller screened reranker, kept as a committed row rather than a deleted
+  experiment: the size-against-quality comparison is what the fine-tune
+  recommendation in docs/results.md rests on.

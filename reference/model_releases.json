@@ -1,0 +1,74 @@
+{
+  "cutoff": "2025-01-31",
+  "models": {
+    "Alibaba-NLP/gte-multilingual-base": {
+      "code_repository": "Alibaba-NLP/new-impl",
+      "code_revision": "40ced75c3017eb27626c9d4ea981bde21a2662f4",
+      "created": "2024-07-20",
+      "notes": "Named in docs/idea.md. Ships its own modelling code, so both the weights and that code are pinned.",
+      "revision": "ca1791e0bcc104f6db161f27de1340241b13c5a4",
+      "revision_date": "2025-01-09",
+      "role": "encoder",
+      "source": "https://huggingface.co/Alibaba-NLP/gte-multilingual-base/commit/ca1791e0bcc104f6db161f27de1340241b13c5a4",
+      "trust_remote_code": true
+    },
+    "BAAI/bge-m3": {
+      "created": "2024-01-27",
+      "notes": "Named in docs/idea.md. Also the one candidate whose forward pass can emit sparse term weights; ticket 09 screens its dense tower only, so all four encoders face the same BM25 lexical retriever.",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "revision_date": "2024-07-03",
+      "role": "encoder",
+      "source": "https://huggingface.co/BAAI/bge-m3/commit/5617a9f61b028005a4858fdac845db406aefb181"
+    },
+    "BAAI/bge-reranker-base": {
+      "created": "2023-09-11",
+      "notes": "The smaller screened reranker (ticket 12), at half the parameters, so the screen separates the reranker's quality from its size.",
+      "revision": "2cfc18c9415c912f9d8155881c133215df768a70",
+      "revision_date": "2024-06-24",
+      "role": "reranker",
+      "source": "https://huggingface.co/BAAI/bge-reranker-base/commit/2cfc18c9415c912f9d8155881c133215df768a70"
+    },
+    "BAAI/bge-reranker-v2-m3": {
+      "created": "2024-03-15",
+      "notes": "The larger of the two off-the-shelf rerankers ticket 12 screens. Same family as the bge-m3 encoder, so document and label are scored by models trained on the same multilingual mixture.",
+      "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+      "revision_date": "2024-06-24",
+      "role": "reranker",
+      "source": "https://huggingface.co/BAAI/bge-reranker-v2-m3/commit/953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
+    },
+    "Helsinki-NLP/opus-mt-de-en": {
+      "created": "2022-03-02",
+      "notes": "Wrote reference/label_translations.json once (ticket 08). An input to the pipeline rather than a dependency of it.",
+      "revision": "1a922f3b32a8e809e17a47d4b32142d8105924e5",
+      "revision_date": "2023-08-16",
+      "role": "translation",
+      "source": "https://huggingface.co/Helsinki-NLP/opus-mt-de-en/commit/1a922f3b32a8e809e17a47d4b32142d8105924e5"
+    },
+    "bert-base-multilingual-cased": {
+      "created": "2022-03-02",
+      "notes": "The rejected classifier's base model (ticket 14). A results row, kept here so the cutoff covers every number the writeup quotes.",
+      "revision": "3f076fdb1ab68d5b2880cb87a0886f315b8146f8",
+      "revision_date": "2024-02-19",
+      "role": "baseline",
+      "source": "https://huggingface.co/bert-base-multilingual-cased/commit/3f076fdb1ab68d5b2880cb87a0886f315b8146f8"
+    },
+    "intfloat/multilingual-e5-base": {
+      "created": "2023-05-19",
+      "notes": "Screening baseline through tickets 04-08. E5's `query:`/`passage:` prefixes are handled by `stages.encoders.PREFIXES`.",
+      "revision": "d13f1b27baf31030b7fd040960d60d909913633f",
+      "revision_date": "2024-02-15",
+      "role": "encoder",
+      "source": "https://huggingface.co/intfloat/multilingual-e5-base/commit/d13f1b27baf31030b7fd040960d60d909913633f"
+    },
+    "intfloat/multilingual-e5-large": {
+      "created": "2023-06-30",
+      "notes": "The same family at 2x the parameters, so the screen separates the family from the size.",
+      "revision": "ab10c1a7f42e74530fe7ae5be82e6d4f11a719eb",
+      "revision_date": "2024-02-15",
+      "role": "encoder",
+      "source": "https://huggingface.co/intfloat/multilingual-e5-large/commit/ab10c1a7f42e74530fe7ae5be82e6d4f11a719eb"
+    }
+  },
+  "schema": 1,
+  "verified_at": "2026-09-08"
+}

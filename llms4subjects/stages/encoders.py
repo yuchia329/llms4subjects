@@ -15,6 +15,11 @@ guessed for the wrong family costs more than none — but it does mean adding an
 encoder means adding its row, or its label tower is encoded under the document
 convention. Ticket 06 declares the sparse interface a model may also offer; the
 adapter that implements it arrives with the encoder that has it.
+
+Nothing is loaded that `reference/model_releases.json` does not vouch for.
+`resolve` checks the model against the 2025-01-31 cutoff and settles the
+revision before any weights are fetched, so an encoder swap cannot quietly
+carry the comparison outside the window the shared task closed in.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from typing import Mapping, Protocol, Sequence, runtime_checkable
 import numpy as np
 
 from ..config import EncoderConfig
+from ..models import ModelRelease, UnverifiedRevision, check_cutoff
 
 
 class Encoder(Protocol):
@@ -55,6 +61,25 @@ class SparseEncoder(Protocol):
     def encode_sparse_labels(
         self, texts: Sequence[str]
     ) -> Sequence[Mapping[str, float]]: ...
+
+
+@runtime_checkable
+class SizedEncoder(Protocol):
+    """An encoder that can say how many parameters it has.
+
+    Nothing in the pipeline needs this — it is the other half of a cost claim,
+    read by the rung-1 screen, which reports each candidate's wall clock beside
+    its size. Asked of the adapter rather than recorded in the registry, so the
+    number describes the weights that actually ran.
+    """
+
+    @property
+    def parameters(self) -> int: ...
+
+
+def parameter_count(encoder: Encoder) -> int | None:
+    """How large the model is, where the adapter can say, and nothing if not."""
+    return encoder.parameters if isinstance(encoder, SizedEncoder) else None
 
 
 def sparse_weights(encoder: Encoder) -> SparseEncoder | None:
@@ -113,6 +138,10 @@ class SentenceTransformerEncoder:
     def dimensions(self) -> int:
         return int(self._model.get_sentence_embedding_dimension())
 
+    @property
+    def parameters(self) -> int:
+        return sum(tensor.numel() for tensor in self._model.parameters())
+
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         return self._encode(texts, self._prefixes.document)
 
@@ -132,22 +161,105 @@ class SentenceTransformerEncoder:
         return np.asarray(vectors, dtype=np.float32)
 
 
+@dataclass(frozen=True)
+class Resolved:
+    """What a config resolves to once the model registry has had its say.
+
+    Separate from `load` so that what gets loaded is assertable without weights
+    being fetched: the revision a run pins, and whether it is about to execute
+    modelling code shipped from the hub, are the two facts the cutoff claim
+    rests on, and both are decided here.
+    """
+
+    release: ModelRelease
+    revision: str
+    prefixes: Prefixes
+    trust_remote_code: bool = False
+    code_revision: str | None = None
+
+    def kwargs(self) -> dict[str, object]:
+        """The `SentenceTransformer` arguments this resolution implies."""
+        arguments: dict[str, object] = {"revision": self.revision}
+        if self.trust_remote_code:
+            arguments["trust_remote_code"] = True
+            # Remote code is fetched twice, by two different calls: the
+            # configuration class by `AutoConfig` and the model class by
+            # `AutoModel`. Both need the pin, or half the executed code floats
+            # at whatever its repository serves today — which is the half that
+            # decides what the other half is.
+            pinned_code = {"code_revision": self.code_revision}
+            arguments["model_kwargs"] = dict(pinned_code)
+            arguments["config_kwargs"] = dict(pinned_code)
+        return arguments
+
+
+def resolve(config: EncoderConfig) -> Resolved:
+    """Check the model against the cutoff and settle what will be loaded.
+
+    The revision comes from the registry, not from the config. `encoder.revision`
+    may restate the registry's pin — a config is allowed to be explicit — but it
+    may not name a different one: the cutoff is a claim about the commit that
+    gets loaded, and a bare SHA carries no date, so a config that could override
+    the pin could carry the whole comparison past the window while every
+    recorded date stayed true. Registering the commit is what makes it
+    checkable, and that is one line in `scripts/verify_model_releases.py`.
+    """
+    entry = check_cutoff(config.name)
+    if config.revision is not None and config.revision != entry.revision:
+        raise UnverifiedRevision(
+            f"{config.name} is pinned to {entry.revision} by "
+            f"reference/model_releases.json, and encoder.revision asks for "
+            f"{config.revision}, which nothing has dated against the "
+            "2025-01-31 cutoff. Register that commit, or drop the override."
+        )
+    return Resolved(
+        release=entry,
+        revision=entry.revision,
+        prefixes=prefixes_for(config.name),
+        trust_remote_code=entry.trust_remote_code,
+        code_revision=entry.code_revision,
+    )
+
+
+def pinned(config):
+    """The experiment config with its encoder revision resolved to the pin.
+
+    Every artifact key that depends on the encoder is a fingerprint of the
+    `encoder` section, and the section a config file carries has no revision in
+    it — the pin lives in the registry. Keyed on that section as written, one
+    encoder's vectors would be served to any revision of it, so re-pinning a
+    model to different weights would read back the old ones and report them as
+    the new. Harnesses therefore key on this rather than on the config as
+    loaded, and the pin appears in every manifest.
+
+    Takes and returns an `ExperimentConfig`; typed loosely to keep this module
+    off the config module's inner shape.
+    """
+    import dataclasses
+
+    resolved = resolve(config.encoder)
+    if config.encoder.revision == resolved.revision:
+        return config
+    return dataclasses.replace(
+        config,
+        encoder=dataclasses.replace(config.encoder, revision=resolved.revision),
+    )
+
+
 def load(config: EncoderConfig, device: str) -> Encoder:
     """Build the adapter named by the config, on the given device."""
     if config.adapter is not None:
         raise NotImplementedError("ticket 15: fine-tuned adapters")
+
+    resolved = resolve(config)
 
     # Imported here rather than at module scope: `transformers` and `torch` cost
     # seconds to import, and every test of this package that does not encode
     # anything would pay it.
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(
-        config.name,
-        device=device,
-        revision=config.revision,
-    )
+    model = SentenceTransformer(config.name, device=device, **resolved.kwargs())
     model.max_seq_length = config.max_length
     return SentenceTransformerEncoder(
-        model, prefixes_for(config.name), config.batch_size
+        model, resolved.prefixes, config.batch_size
     )

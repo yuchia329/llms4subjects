@@ -1,0 +1,58 @@
+# Rung 1 with `intfloat/multilingual-e5-large` (ticket 09).
+#
+# One line apart from configs/rung1.yaml — the encoder name — so the pair is the
+# screen rather than two experiments. The same family as the baseline at twice
+# the parameters, which is what separates "this family suits the task" from
+# "this size does".
+#
+# The fusion weights below are the ones tuned for `multilingual-e5-base`, and
+# they stay: the screen holds everything but the encoder fixed, so a weight
+# retuned per encoder would rank the tuning. Retuning happens once, at rung 2,
+# for whichever encoder is chosen.
+name: rung1-e5-large
+
+encoder:
+  name: intfloat/multilingual-e5-large
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` in
+    # configs/rung1.yaml, because the screen's one variable is the encoder.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  # Candidate generation emits this many per record with provenance; the
+  # submission takes the top 50 and the rest are the reranker's input.
+  candidates: 100
+  # As tuned in configs/rung1.yaml; see the note on the kNN weight above.
+  rrf_k: 60
+
+notes: >
+  A screened encoder (ticket 09). Read only against the other three rung-1
+  encoder rows, all of which hold the index, the label text and the fusion
+  fixed: what this file measures is `multilingual-e5-large` against
+  `multilingual-e5-base`, size against size, in one family.

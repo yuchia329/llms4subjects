@@ -21,12 +21,30 @@ opened once, at the end of the project (ticket 17).
 | `rung1-lexical` | none read | lexical label matching only | **0.1558** | 0.1416 | 0.2532 |
 | `rung1` (fused) | 8,000 stratified | all three, RRF | **0.3964** | 0.5340 | 0.5568 |
 | `rung1-prior` † | 8,000 stratified | all three + the 66-group prior | **0.4202** | 0.5464 | 0.5840 |
+| `rung1-gte-base` ‡ | 8,000 stratified | all three, RRF | **0.4724** | 0.6107 | 0.6481 |
+| `rung1-bge-m3` ‡ | 8,000 stratified | all three, RRF | **0.4702** | 0.5981 | 0.6378 |
+| `rung1-e5-large` ‡ | 8,000 stratified | all three, RRF | **0.4063** | 0.5500 | 0.5748 |
 | `baseline` (rejected) | — | none: a 14,607-way dense classifier | **0.0667** | 0.1623 | 0.1518 |
 
-† `rung1-prior` was measured after the encoder revision pinning landed, which
-moved every rung-1 figure; its own unboosted baseline, measured in the same
-pass, is 0.4149 micro R@10 rather than the 0.3964 above, so the prior is worth
-+0.0053 and not the +0.0238 this column would suggest. See its section.
+† `rung1-prior` was measured against the *bilingual* label text, which moved
+every rung-1 figure that reads label text; its own unboosted baseline, measured
+in the same pass, is 0.4149 micro R@10 rather than the 0.3964 above, so the
+prior is worth +0.0053 and not the +0.0238 this column would suggest. See its
+section.
+
+The mover is `label_text.bilingual`, not the encoder revision pinning that
+landed alongside it (ticket 09). For all four screened encoders the pinned
+revision's `model.safetensors`, `config.json`, `tokenizer.json` and pooling
+config are byte-identical to today's head — the post-cutoff commits added
+model-card evaluation results and ONNX/OpenVINO exports, and nothing a run
+loads — so pinning changed no vector and no figure in this document. What it
+changes is that the cutoff claim is now checkable; see "rung 1 — four encoders
+screened" below.
+
+‡ The three screened encoders (ticket 09), each one flag from `configs/rung1.yaml`
+and all bilingual, so the row they are read against is `rung1`'s bilingual 0.4149
+rather than the German-only 0.3964 above. `gte-multilingual-base` is the encoder
+rungs 2 and 3 carry forward.
 
 The three rung-1 rows are not competing. They are three mechanisms reaching
 different parts of the vocabulary — kNN takes the head at 0.69 and the zero-shot
@@ -915,3 +933,437 @@ The unboosted column above is re-measured in the same pass rather than taken
 from the `rung1` section, because the encoder revision pinning landed in this
 checkout in between and moved every rung-1 figure. The pair is internally
 consistent: both columns come from one retrieval pass over one index.
+
+## rung1 + an off-the-shelf cross-encoder — screened four ways, kept as a second opinion
+
+    python scripts/rerank_report.py configs/rung1-rerank-base.yaml --sample 300 --query label --mix fuse --sweep-mix
+    python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 100 --query label
+
+Ticket 12's question is a budget question: an off-the-shelf multilingual
+reranker runs first, and a fine-tune is a fourth run on the `nlp2` GPU host only
+if the untrained model demonstrably helps. Two rerankers were screened, both
+inside the 2025-01-31 cutoff and both pinned in
+[reference/model_releases.json](../reference/model_releases.json):
+`BAAI/bge-reranker-base` (XLM-R base, 278M, released 2023-09-11) and
+`BAAI/bge-reranker-v2-m3` (XLM-R large, 568M, 2024-03-15).
+
+**Every figure in this section is measured on a 300-record stratified sample of
+dev, not on all 5,354**, and is therefore not comparable to the rows in the
+summary table above. The reason is the cost of the stage: at `input_k: 100` a dev
+pass is 535,400 document-label pairs through a model that reads both sides
+jointly, which is 3.9 hours for the smaller reranker on this laptop's MPS
+backend and 25 hours for the larger one. The sample is drawn by the same seeded,
+type-and-language-stratified selector the index uses, because the dev CSV is
+grouped and its first 300 records are 300 English ones. Within the section
+everything is comparable: one retrieval pass, one candidate set, one gold set,
+and the fused row re-measured in the same pass.
+
+The candidates are the rung-1 fused top 100, whose sample figures are micro P@5
+0.1700, P@10 0.1073, R@10 0.4529, R@50 0.5992.
+
+### Precision has a ceiling, and it is not 1.0
+
+At 2.37 gold labels per record on this sample, a perfect system scores **0.4480
+at k=5** and **0.2367 at k=10**: a record with two gold labels cannot do better
+than 0.4 at k=5. So the fused P@5 of 0.1700 is 37.9% of achievable rather than
+17% of anything, and the leaderboard leader's test-set 0.25 at k=5 is roughly
+half of what is reachable rather than a quarter. Every precision figure below is
+printed against that ceiling by the harness.
+
+### The screen: replacing the fused ranking loses
+
+docs/spec.md's pipeline contract has reranking *reduce* the top 100 to the final
+50 — the cross-encoder's order replaces the fused one. Under that contract, four
+input shapes were screened, since a cross-encoder is asymmetric and its two
+inputs are a query and a passage:
+
+| reranker | query side | label text | P@5 | P@10 | R@10 | R@50 | pairs/s |
+|---|---|---|---:|---:|---:|---:|---:|
+| — (fused candidates) | — | — | **0.1700** | **0.1073** | **0.4529** | 0.5992 | — |
+| `bge-reranker-base` | document | field-marked | 0.0913 | 0.0600 | 0.2532 | 0.5105 | 30 |
+| `bge-reranker-base` | document | name only | 0.1280 | 0.0800 | 0.3376 | 0.5809 | 37 |
+| `bge-reranker-base` | label | field-marked | 0.1387 | 0.0927 | 0.3910 | **0.6076** | 25 |
+| `bge-reranker-base` | label | name only | 0.1480 | 0.0960 | 0.4051 | 0.6132 | 42 |
+
+Every row loses at the k values that matter, and the losses are large — the
+worst shape halves P@5. Two things about the shape do matter, and both are now
+config flags rather than assumptions. Presenting the **label as the query** is
+worth +0.047 P@5 with the field-marked text and +0.020 with the name-only text,
+which is the opposite of how the stage was described before it was measured; a
+subject heading behaves like a query and a document does not. And the **name-only
+bilingual rendering** (`Erdbebensicherheit / Earthquake safety`) beats the
+field-marked three-line form the label tower reads, by +0.009 P@5 and at 1.7x
+the throughput, because the field-marked form is a cataloguing record and these
+models were trained on passages.
+
+The larger reranker is not better, and rules itself out on cost. On a
+100-record sample (its own fused reference: P@5 0.1600, R@10 0.4280) it scores
+P@5 0.1420 and R@10 0.3520 — the same shape of loss as the smaller model — at
+**6 pairs a second against 42**, which is 25 hours for one dev pass. It is
+`configs/rung1-rerank.yaml`, screened and not used.
+
+### The band breakdown is why "replace" is the wrong question
+
+The losses are not spread evenly. For the label-as-query row above:
+
+| band | assignments | fused R@10 | replaced R@10 | difference |
+|---|---:|---:|---:|---:|
+| head | 131 | 0.7023 | 0.4198 | **−0.2825** |
+| torso | 321 | 0.4953 | 0.4112 | −0.0841 |
+| tail | 200 | 0.2900 | 0.3450 | **+0.0550** |
+| zero | 59 | 0.2203 | 0.3729 | **+0.1526** |
+
+The cross-encoder is the worst thing that has happened to the head band in this
+project and the best thing that has happened to the zero-shot band. That is not
+a contradiction: the head is where 20 neighbouring documents agree and document
+similarity is already almost right, and the zero-shot band is reachable only
+through label text, which is the one thing a cross-encoder reads carefully.
++0.1526 R@10 on the band that carries 8.9% of gold assignments and defines the
+project's thesis is the largest single-band movement any component has produced.
+
+A mechanism that is right about different records than the one before it is a
+fusion problem, not a replacement one. So `reranker.mix: fuse` combines the two
+orders by reciprocal rank over the same candidate set — the retrieval order at
+weight 1.0, the cross-encoder's at `mix_weight`.
+
+### Fusing the two orders wins everywhere
+
+| mix_weight | P@5 | P@10 | R@10 | R@50 |
+|---|---:|---:|---:|---:|
+| 0.0 — the fused ranking, reproduced through this path | 0.1700 | 0.1073 | 0.4529 | 0.5992 |
+| 0.25 | 0.1793 | 0.1110 | 0.4684 | 0.6203 |
+| 0.5 | **0.1847** | 0.1123 | 0.4740 | 0.6329 |
+| **1.0** | 0.1833 | **0.1153** | **0.4866** | **0.6371** |
+| 2.0 | 0.1753 | 0.1097 | 0.4627 | 0.6357 |
+| 4.0 | 0.1633 | 0.1047 | 0.4416 | 0.6287 |
+
+Weight 0 reproduces the fused figures to four decimals, which is what makes the
+other rows attributable: the pass runs, costs its 13 minutes, and changes
+nothing. The curve rises to a maximum and falls again rather than wandering,
+which is the shape of a signal rather than of 300 records of noise. Selection is
+micro R@10, as everywhere else in this project, so **`mix_weight: 1.0`** is
+committed to the config; P@5 peaks at 0.5 and the two are within 0.0014 of each
+other at both weights.
+
+The name-only rendering that won the replacement screen does **not** win here.
+Swept the same way, it peaks at micro R@10 0.4782 (`mix_weight` 0.25) against
+the field-marked form's 0.4866, while reaching a marginally higher P@5 of 0.1847
+at weight 1.0 — so the two dimensions interact rather than compose: the
+name-only form is the better ranker on its own and the field-marked form is the
+more useful second opinion, which is what a fusion should prefer. Selection on
+micro R@10 therefore keeps the field-marked text the label tower already
+renders, and `label_form` stays at its `rendered` default.
+
+At the tuned weight, against the same candidates:
+
+| | P@5 | P@10 | R@10 | R@50 | official P@5 | official R@10 |
+|---|---:|---:|---:|---:|---:|---:|
+| fused | 0.1700 | 0.1073 | 0.4529 | 0.5992 | 0.1667 | 0.5576 |
+| replaced | 0.1387 | 0.0927 | 0.3910 | 0.6076 | 0.1159 | 0.4125 |
+| **fused with the reranker** | **0.1833** | **0.1153** | **0.4866** | **0.6371** | **0.1689** | **0.5844** |
+
++0.0133 P@5 and +0.0337 R@10 over the candidates it was given, or 37.9% to
+40.9% of achievable precision at k=5. The band breakdown keeps most of what
+replacement bought and gives back most of what it cost:
+
+| band | assignments | fused R@10 | fused with the reranker | difference |
+|---|---:|---:|---:|---:|
+| head | 131 | 0.7023 | 0.6565 | −0.0458 |
+| torso | 321 | 0.4953 | 0.5296 | +0.0343 |
+| tail | 200 | 0.2900 | 0.3700 | +0.0800 |
+| zero | 59 | 0.2203 | 0.2712 | +0.0509 |
+
+Both document languages gain — German R@10 0.4712 to 0.5288, English 0.4365 to
+0.4518 — so this is not a cross-lingual trade either. The head band still pays
+0.046, and that is the honest cost of the stage.
+
+### The confidence measure, and which ranking it should read
+
+Ticket 12 owes the adjudicator (ticket 13) and the coverage curve (ticket 16) a
+per-record confidence. `reranker.confidence` is the mean score of a record's top
+5, and it is defined over any scored ranking, which turned out to matter: the
+three rankings calibrate very differently against measured correctness.
+
+| the confidence is read from | Pearson against per-record P@5 | P@5 of the least-confident 20% | overall P@5 |
+|---|---:|---:|---:|
+| the fused ranking (mean RRF score) | **+0.4142** | 0.0933 | 0.1700 |
+| the fused-with-reranker ranking | +0.3692 | 0.0967 | 0.1833 |
+| the reranker's own relevance, replacing | −0.0499 | 0.0933 | 0.0913 |
+
+Read from the fused ranking, the measure works: in confidence deciles, P@5 falls
+from 0.3200 to 0.0800 and the share of records with no correct label in their
+top 5 rises from 6.7% to 66.7%, monotonically apart from two adjacent buckets.
+
+Read from the cross-encoder's own relevance under replacement, it is worse than
+useless — its **most** confident decile has a mean relevance of 0.9966 and 66.7%
+of its records have no hit at all. An off-the-shelf reranker on this task is
+confidently wrong, which is exactly the failure mode that would poison a router:
+the records it is surest about are the ones it has ruined. That is a finding
+about the measure as much as about the model, and it is the reason `confidence`
+takes a ranking rather than being defined on reranked output alone.
+
+Ticket 13 should route on the confidence of whatever ranking the pipeline
+produces — fused, or fused-with-reranker at 0.3692 — and never on a bare
+cross-encoder relevance.
+
+### What the reranker actually moved
+
+Under replacement, the mean pre-rerank rank of a code that ended up in the final
+top 5 was 41.1 of 100 with the document as query and 32.8 with the label as
+query, and 0.86 of the 5 codes fusion ranked first survived in the top 5: the
+model was reordering nearly at random with respect to the fused list. Fused at
+weight 1.0, that mean rank is 5.6 and 2.97 of fusion's top 5 survive — the
+reranker is promoting from the top 20 and moving a handful of candidates, which
+is what a +0.013 P@5 should look like.
+
+### Cost, and the recommendation on fine-tuning
+
+The pass runs on Apple Silicon with no CUDA, as the ticket requires: 30,000
+pairs in 789 seconds on the M4 Pro at `max_length: 512`, batch 32, MPS. Two
+implementation details are load-bearing there. Sorting the pairs by length
+before batching is worth 3 to 4 times the throughput (4 to 17 pairs a second for
+the larger model, 15 to 48 for the smaller), because a batch is padded to its
+longest member and 100 candidates for one record all carry the same document.
+And the harness caches the cross-encoder's **scores** rather than the ranking, so
+the `mix_weight` sweep above — six rankings through the real stage — costs
+seconds rather than six passes.
+
+**Recommendation: do not spend a fourth `nlp2` run on a reranker fine-tune, and
+keep the off-the-shelf model in `fuse` mode.** The reasoning, in the order it
+should be read:
+
+1. The off-the-shelf model does help, but only as a second opinion: +0.0337
+   micro R@10 fused, against −0.0619 replaced. The ticket's condition for asking
+   for GPU time — that the untrained version demonstrably helps — is met in the
+   narrowest sense and not the sense the fine-tune would build on. A fine-tune
+   optimises the model's own ranking, which is the one measurement that came out
+   negative.
+2. What the fine-tune would buy is bounded by what the component can reach.
+   Reranking cannot add a candidate, so the candidate set's own recall is the
+   ceiling: on this sample micro R@100 is 0.6610, and a perfect reranker over
+   these candidates would score that at every k. The fused ranking starts at
+   R@10 0.4529, which leaves 0.2081 for the stage to win, and the untrained
+   model in `fuse` mode has taken 0.0337 of it — 16% — with no training at all.
+   A fine-tune is bidding for a share of the remaining 0.1744, and only for
+   records whose gold labels are already among the 100 candidates.
+3. What it would cost is a fourth run on rented hardware plus the pair mining
+   that feeds it: contrastive pairs from 32,043 training records against a
+   79,427-code vocabulary, with hard negatives drawn from the retrievers, which
+   is the same mining the rung-3 encoder fine-tunes need and would have to be
+   built twice. Against the three runs already budgeted (two rung-3 encoder
+   fine-tunes and the baseline re-run), it is the least attributable of the
+   four: an encoder fine-tune moves candidate generation, whose ceiling is the
+   thing every later stage is bounded by.
+4. The cheaper experiments are not exhausted. `input_k` is untested below 100,
+   and the movement figures suggest most of the gain comes from the top 20 —
+   a 20-pair pass would be 5x cheaper and might keep most of +0.034. A per-band
+   `mix_weight`, or one that skips the head band, would address the 0.046 the
+   head still pays. Both are Apple Silicon experiments with no GPU budget
+   attached, and both should be run before any fine-tune is considered.
+
+If a fine-tune is nevertheless wanted later, the honest framing for the budget
+is: one LoRA fine-tune of `bge-reranker-base` on mined TIBKAT pairs, of the same
+order as one rung-3 encoder run, in exchange for a stage whose total remaining
+headroom at k=10 is +0.14 and whose untrained version has already taken +0.034
+of it.
+
+### What this changes
+
+`reranker.enabled` stays **false** in `configs/rung1.yaml` and the rest of the
+ladder: this section is a 300-record sample, and a stage that costs 3.9 hours a
+dev pass does not belong in the loop that runs hundreds of times until rung 2
+has fixed the candidates it reranks. `configs/rung1-rerank-base.yaml` carries the
+tuned setting — label as query, the field-marked label text, `mix: fuse`,
+`mix_weight: 1.0` — and is the configuration ticket 17 should consider for the
+single test run, where one 4-hour pass buys +0.034 R@10 and is paid once.
+
+## rung 1 — four encoders screened
+
+    python scripts/verify_model_releases.py --force        # once, the registry
+    python scripts/screen_encoders.py configs/rung1.yaml \
+        configs/rung1-e5-large.yaml configs/rung1-bge-m3.yaml \
+        configs/rung1-gte-base.yaml
+
+The cheapest decision in the project: which encoder deserves the GPU budget.
+Four off-the-shelf encoders through the whole of stage one, nothing trained, all
+of it on the M4 Pro. The screen refuses configs that differ in anything but
+their encoder — index, label text, fusion weights, `rrf_k` and input length are
+held at the values [configs/rung1.yaml](../configs/rung1.yaml) carries — so what
+is ranked is the model and not a retuning that arrived with it. All four rows
+are the bilingual label text, so the `rung1` figure they are read against is
+0.4149 rather than the 0.3964 in the summary table.
+
+| encoder | dim | R@5 | R@10 | R@50 | R@100 | official R@10 |
+|---|---:|---:|---:|---:|---:|---:|
+| **`gte-multilingual-base`** | 768 | 0.3679 | **0.4724** | 0.6481 | 0.7136 | 0.6107 |
+| `bge-m3` | 1024 | 0.3748 | **0.4702** | 0.6378 | 0.7069 | 0.5981 |
+| `multilingual-e5-base` | 768 | 0.3205 | **0.4149** | 0.5686 | 0.6452 | 0.5376 |
+| `multilingual-e5-large` | 1024 | 0.3149 | **0.4063** | 0.5748 | 0.6485 | 0.5500 |
+
+**The encoder is worth +0.0575 micro R@10** — 0.4724 against the 0.4149 every
+rung-1 row so far was measured at, a 13.9% relative gain for a config change and
+no training. It is worth +0.0684 at the candidate ceiling (0.7136 against
+0.6452), which is headroom every later stage inherits.
+
+### Size does not carry, and the ranking is not the parameter count
+
+`multilingual-e5-large` is the same family at twice the parameters and it is
+**worse than its own base model**: 0.4063 against 0.4149. Nothing about the run
+differs but the checkpoint, so this is not a tuning artifact, and the
+per-retriever split says where it happens:
+
+| encoder | dense | knn | lexical | fused |
+|---|---:|---:|---:|---:|
+| `gte-multilingual-base` | 0.1999 | 0.3695 | 0.1781 | 0.4724 |
+| `bge-m3` | 0.2375 | 0.3473 | 0.1781 | 0.4702 |
+| `multilingual-e5-base` | 0.1149 | 0.3023 | 0.1781 | 0.4149 |
+| `multilingual-e5-large` | 0.0852 | 0.3193 | 0.1781 | 0.4063 |
+
+The large model is the **better** document-to-document encoder (kNN 0.3193
+against 0.3023) and the **worst** document-to-label one (0.0852 against 0.1149,
+a quarter below its base). The two towers are not one capability: scaling within
+the E5 family bought neighbour similarity and lost cross-lingual short-text
+matching, and because the label tower is what reaches the tail, the fused number
+followed the tower rather than the neighbours.
+
+The lexical column is the screen's own control. BM25 over label strings reads no
+vectors, so it must be identical for every row, and it is — 0.1781 to four
+decimals, four times over. A screen where that column moved would have a
+variable nobody declared.
+
+Two more cross-checks land on numbers measured by other code paths: kNN at
+0.3023 for `multilingual-e5-base` reproduces `rung1-knn` exactly, and its dense
+0.1149 and lexical 0.1781 reproduce the bilingual rows of "rung1 — translated
+label names". Three harnesses, the same four decimals.
+
+### By frequency band (micro R@10)
+
+| encoder | head | torso | tail | zero |
+|---|---:|---:|---:|---:|
+| `gte-multilingual-base` | 0.6914 | **0.5437** | 0.3311 | 0.2363 |
+| `bge-m3` | 0.6874 | 0.5338 | **0.3361** | **0.2498** |
+| `multilingual-e5-base` | 0.7022 | 0.4610 | 0.2612 | 0.2310 |
+| `multilingual-e5-large` | **0.7116** | 0.4646 | 0.2387 | 0.1791 |
+
+**The encoder choice buys torso and tail, and the head is where the losing pair
+wins.** `gte` is +0.0827 on torso and +0.0699 on tail against `e5-base`, and
+−0.0108 on head. That is the shape the project wants: 65 head labels carry 16.0%
+of assignments and are already at 0.69–0.71 whatever the encoder, while the 4,132
+torso and tail labels carry 75.2% and are where the four models actually differ.
+
+The zero-shot band ranks differently from the aggregate: `bge-m3` takes it at
+0.2498, ahead of `gte`'s 0.2363, and it also has the strongest label tower
+(0.2375 against 0.1999). Those two facts are the same fact — the tower is the
+only mechanism that reaches a label no indexed document carries — and they are
+the reason the ladder fine-tunes the top **two** rather than only the winner
+(docs/spec.md, story 41). On the band the design exists for, the runner-up is
+ahead.
+
+### Wall clock, and what these numbers are worth
+
+| encoder | parameters | load | stage one | total | matrices computed |
+|---|---:|---:|---:|---:|---|
+| `gte-multilingual-base` | 305M | 29.8s | 1732.4s | 1762.2s | 3 |
+| `bge-m3` | 568M | 11.8s | 6029.7s | 6041.5s | 3 |
+| `multilingual-e5-base` | 278M | 4.2s | 14.9s | 19.1s | 0, warm |
+| `multilingual-e5-large` | 560M | 8.2s | 1863.9s | 1872.1s | 3 |
+
+A pass encodes three matrices — the 8,000 index documents, all 79,427 label
+texts, and the 5,354 dev records — and a warm one reads them back from disk,
+which is why `e5-base`'s 19.1s is a measure of I/O and not of the encoder. The
+screen counts what each pass actually computed rather than asking whether a
+cache directory exists, because a run that found one matrix and computed two
+paid nearly a cold run's price; `--cold` forces a throwaway artifact root when
+the seconds are the whole point.
+
+**Read the three cold rows as approximate.** The laptop was running two
+concurrent reranker passes from ticket 12 for part of this screen, and swap
+reached 41 GB of 42 GB during `bge-m3`'s tower; its 6,042s is the row that
+suffered most, and the honest statement is that `gte` is cheaper than `bge-m3`
+by a wide margin rather than by 3.4x. The comparison the *decision* rests on is
+unaffected: recall is deterministic given the encoder and the seeded index, and
+those figures would be identical on an idle machine.
+
+The cost argument nevertheless points the same way as the score. `gte` is the
+smallest of the three cold rows at 305M parameters and emits 768 dimensions
+against `bge-m3`'s 1024, so it is cheaper to run, cheaper to index and cheaper
+to fine-tune, and it won.
+
+### The model cutoff, made checkable
+
+| encoder | created | pinned revision | dated |
+|---|---|---|---|
+| `Alibaba-NLP/gte-multilingual-base` | 2024-07-20 | `ca1791e0bcc1` | 2025-01-09 |
+| `BAAI/bge-m3` | 2024-01-27 | `5617a9f61b02` | 2024-07-03 |
+| `intfloat/multilingual-e5-base` | 2023-05-19 | `d13f1b27baf3` | 2024-02-15 |
+| `intfloat/multilingual-e5-large` | 2023-06-30 | `ab10c1a7f42e` | 2024-02-15 |
+
+Every candidate predates 2025-01-31, the close of the shared task's evaluation
+window, and the table above is generated from
+[reference/model_releases.json](../reference/model_releases.json) rather than
+typed — `python scripts/verify_model_releases.py` re-derives every date from the
+hub and `--offline` re-checks the committed file, so the claim is a command
+rather than a comment.
+
+The reason it is a registry and not a sentence: **both E5 checkpoints had
+commits landed on them in April 2026**, so a config naming `intfloat/
+multilingual-e5-base` without a revision resolves to a 2026 state of a 2023
+model, and every date in the claim stays true while the claim stops being.
+`stages.encoders.resolve` now loads the pinned commit, and `models.check_cutoff`
+refuses a model the registry does not vouch for before any weights are fetched.
+`gte-multilingual-base` also ships its own modelling code, which loading
+executes, so the registry pins that repository and commit too
+(`Alibaba-NLP/new-impl@40ced75c3017`, 2024-08-11).
+
+For all four encoders the pinned revision's `model.safetensors`, `config.json`,
+`tokenizer.json` and pooling config are byte-identical to today's head — the
+post-cutoff commits added model-card evaluation results and ONNX/OpenVINO
+exports and nothing a run loads. So pinning moved no number in this document.
+That is the finding, not a disappointment: the cost of the guarantee is zero
+today, and it is the only version of the guarantee that survives a vendor
+re-uploading weights under the same name.
+
+### The index, and that it is reproducible
+
+8,000 of the 32,043 tib-core train documents, drawn stratified by record type and
+language from `index.seed: 42`. Every one of the 39 corpus cells is represented,
+and the nine cells above 200 documents each hold their corpus share to within
+0.002:
+
+| record type | language | corpus | corpus share | sampled | sampled share |
+|---|---|---:|---:|---:|---:|
+| Book | en | 12,772 | 0.3986 | 3,175 | 0.3969 |
+| Book | de | 9,135 | 0.2851 | 2,281 | 0.2851 |
+| Thesis | de | 3,760 | 0.1173 | 939 | 0.1174 |
+| Conference | en | 2,066 | 0.0645 | 516 | 0.0645 |
+| Thesis | en | 1,975 | 0.0616 | 493 | 0.0616 |
+| Report | de | 801 | 0.0250 | 200 | 0.0250 |
+| Conference | de | 643 | 0.0201 | 161 | 0.0201 |
+| Report | en | 442 | 0.0138 | 110 | 0.0138 |
+| Article | en | 248 | 0.0077 | 62 | 0.0077 |
+
+The other thirty cells hold fewer than 50 documents each — books, theses,
+reports and conferences in Arabic, Czech, Danish, Greek, Spanish, Finnish,
+French, Hebrew, Italian, Japanese, Dutch, Norwegian, Polish, Romanian, Turkish,
+Ukrainian, Chinese and Estonian, plus German articles and the records whose
+language field is empty — and each contributes at least one document, because a
+cell whose proportional share rounds to nothing is given one anyway. An index
+missing a language outright would be a different experiment rather than a
+smaller one, and the official aggregation gives every cell one vote regardless
+of size.
+
+### What this decides
+
+- **Rung 2 runs `gte-multilingual-base` and `bge-m3`**, and the fusion weights
+  are retuned for whichever it settles on: the weights in `configs/rung1.yaml`
+  were tuned for `multilingual-e5-base`, whose retriever balance is not these
+  models' (its label tower is half as strong). The screen deliberately did not
+  retune them, so `gte`'s 0.4724 is a floor rather than its best.
+- **Rung 3 fine-tunes those same two**, subject to rung 2 confirming the ranking
+  survives the index growing to 32,043 documents. The E5 pair is out, and the
+  result that dropped them is worth carrying into the writeup: within one family
+  the larger checkpoint was the worse retriever here.
+- **The off-the-shelf pipeline is at 0.4724 dev micro R@10 and 0.6107 official
+  R@10**, with no GPU spent and no model trained. That is the number
+  fine-tuning has to beat, and it is what makes "how much of the score came from
+  training" answerable at the end (docs/spec.md, story 10).

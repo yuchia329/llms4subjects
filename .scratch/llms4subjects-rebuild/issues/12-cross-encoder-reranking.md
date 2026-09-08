@@ -23,14 +23,29 @@ achievable, not 25%.
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** done — the stage, the screening harness, and a recommendation
+against the fine-tune. The off-the-shelf reranker loses 0.06 micro R@10 when its
+order *replaces* the fused one (wrecking the head band, gaining the zero-shot
+band) and wins 0.034 when `reranker.mix: fuse` combines the two orders instead,
+which is the setting committed to `configs/rung1-rerank-base.yaml`. Measured on
+a 300-record stratified dev sample, because a full dev pass is 3.9 hours on the
+laptop. Its own relevance scores are anti-calibrated (Pearson −0.05, most
+confident decile 66.7% no-hit), so the confidence measure ticket 13 routes on is
+`confidence` read from the fused ranking (+0.41). `reranker.enabled` stays false
+in the ladder.
 
-- [ ] The top 100 candidates are reranked to a final ranked 50 through the shared pipeline seam
-- [ ] The reranker model's release date precedes 2025-01-31
-- [ ] Dev Precision@5, Precision@10 and Recall@10 are reported before and after reranking
-- [ ] Reported precision is accompanied by the achievable ceiling so the numbers are not misread
-- [ ] A per-record confidence measure is emitted and its calibration against correctness is shown
-- [ ] A recommendation on whether to fine-tune the reranker is recorded, with the evidence behind it
-- [ ] Reranking is toggleable, and the pipeline remains correct with it disabled
-- [ ] The off-the-shelf reranking pass completes on Apple Silicon without CUDA
-- [ ] If a reranker fine-tune is recommended, the recommendation states the expected `nlp2` cost and what it buys
+- [x] The top 100 candidates are reranked to a final ranked 50 through the shared pipeline seam
+- [x] The reranker model's release date precedes 2025-01-31 — both screened models are in
+      `reference/model_releases.json` with pinned pre-cutoff revisions, and `reranker.resolve`
+      refuses anything the registry does not vouch for
+- [x] Dev Precision@5, Precision@10 and Recall@10 are reported before and after reranking — on a
+      300-record stratified sample, with the wall-clock reason stated
+- [x] Reported precision is accompanied by the achievable ceiling so the numbers are not misread
+- [x] A per-record confidence measure is emitted and its calibration against correctness is shown —
+      for all three rankings, which is how the anti-calibration was found
+- [x] A recommendation on whether to fine-tune the reranker is recorded, with the evidence behind it
+- [x] Reranking is toggleable, and the pipeline remains correct with it disabled
+- [x] The off-the-shelf reranking pass completes on Apple Silicon without CUDA — 30,000 pairs in
+      789s on MPS; length-sorted batching is what makes it affordable
+- [x] If a reranker fine-tune is recommended, the recommendation states the expected `nlp2` cost and
+      what it buys — it is not recommended, and the cost and the bounded upside are stated anyway

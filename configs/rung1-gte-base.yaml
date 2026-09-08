@@ -1,0 +1,54 @@
+# Rung 1 with `Alibaba-NLP/gte-multilingual-base` (ticket 09).
+#
+# One line apart from configs/rung1.yaml. The only candidate that ships its own
+# modelling code rather than using the one in `transformers`, so loading it
+# executes code from the hub; `reference/model_releases.json` pins both that
+# code and the weights to commits inside the 2025-01-31 cutoff, and
+# `stages.encoders.resolve` is what passes those pins to the loader.
+name: rung1-gte-base
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` in
+    # configs/rung1.yaml, because the screen's one variable is the encoder.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  # Candidate generation emits this many per record with provenance; the
+  # submission takes the top 50 and the rest are the reranker's input.
+  candidates: 100
+  # As tuned in configs/rung1.yaml; see the note on the kNN weight above.
+  rrf_k: 60
+
+notes: >
+  A screened encoder (ticket 09). Read only against the other three rung-1
+  encoder rows, all of which hold the index, the label text and the fusion
+  fixed. The one candidate loaded with its own modelling code, pinned in
+  reference/model_releases.json alongside the weights.

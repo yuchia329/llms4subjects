@@ -1,0 +1,65 @@
+# Rung 1, plus the off-the-shelf cross-encoder (ticket 12).
+#
+#   python scripts/rerank_report.py configs/rung1-rerank.yaml
+#
+# Identical to configs/rung1.yaml in every other section, so the before/after
+# rows in docs/results.md differ by the reranker and nothing else.
+name: rung1-e5-base-rerank-m3
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+reranker:
+  enabled: true
+  # XLM-RoBERTa-large, 568M parameters, released 2024-03-15 and last committed
+  # 2024-06-24 — both inside the 2025-01-31 model cutoff (docs/spec.md), which
+  # reference/model_releases.json records and pins the loaded revision for. It is
+  # the multilingual reranker of the BGE-M3 family whose retrieval half this
+  # project already screens, so document and label are scored by models trained
+  # on the same 100-language mixture.
+  model: BAAI/bge-reranker-v2-m3
+  max_length: 512
+  batch_size: 32
+  # The whole fused candidate list in, the submission's 50 out. `input_k` is
+  # the cost of the stage: 100 pairs per record through a model that reads both
+  # sides jointly.
+  input_k: 100
+  output_k: 50
+
+notes: >
+  The larger screened reranker, kept as the row that rules itself out: it
+  matches the smaller model's quality (docs/results.md) at 6 pairs a second
+  against 42, which is 25 hours for one dev pass on this laptop. Screened, not
+  used.

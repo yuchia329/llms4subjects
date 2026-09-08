@@ -48,6 +48,7 @@ from llms4subjects.corpus import (  # noqa: E402
     load_name_qualifiers,
     load_vocabulary,
 )
+from llms4subjects.models import check_cutoff  # noqa: E402
 from llms4subjects.paths import LABEL_TRANSLATIONS_FILE  # noqa: E402
 from llms4subjects.stages.label_text import translatable  # noqa: E402
 
@@ -63,8 +64,11 @@ VOCABULARY = "tib-core"
 MODEL = "Helsinki-NLP/opus-mt-de-en"
 
 # The exact commit, not a branch: `--force` on another machine has to reproduce
-# these strings rather than whatever `main` holds that day.
-MODEL_REVISION = "1a922f3b32a8e809e17a47d4b32142d8105924e5"
+# these strings rather than whatever `main` holds that day. Read from the model
+# registry rather than written out here, so the commit this script loads and
+# the commit `scripts/verify_model_releases.py` dated against the cutoff cannot
+# drift apart into two answers to one question.
+MODEL_REVISION = check_cutoff(MODEL).revision
 
 SCHEMA = 1
 

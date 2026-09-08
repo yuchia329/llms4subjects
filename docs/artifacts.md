@@ -61,6 +61,14 @@ holds one whole matrix, which makes the unit of reuse the exact set of texts: an
 8,000-document sample shares nothing with the 32,043-document index it was drawn
 from, because a per-text cache would spend more on stat calls than it saves.
 
+The `reranked` stage is cached the same way, by `scripts/rerank_report.py`
+rather than by the pipeline: one JSON file per split holding the reranked lists
+with their scores and provenance, keyed by every section from the label text
+through the reranker. Reranking dev costs a cross-encoder forward pass per
+candidate — 535,400 of them at `input_k: 100` — so the confidence calibration
+and the band tables read that file rather than paying for the pass again.
+`--refresh` recomputes it.
+
 Asking for a path creates nothing, so a cache miss stays a miss; only
 `prepare` writes. That asymmetry matters more than it looks: a `path()` that
 created its directory would make the next run see a hit for an artifact that
@@ -73,18 +81,19 @@ To see what a run will read and write before it starts:
 ## Frozen reference artifacts
 
 `reference/` is the opposite of `artifacts/`: small, tracked, and never written
-as a side effect of a run. It holds two files:
+as a side effect of a run. It holds three files:
 
 | file | what it is | written by |
 |---|---|---|
 | `frequency_bands.json` | the label frequency band assignment, frozen against tib-core train counts | `scripts/freeze_bands.py --force` |
 | `label_translations.json` | English for all 79,224 distinct German label strings | `scripts/translate_labels.py` |
+| `model_releases.json` | every model the project loads, its release date and the revision it is pinned to | `scripts/verify_model_releases.py --force` |
 
 The distinction is the point. A cached artifact is a saved computation and can
 be deleted at any time; a frozen reference is a *decision*, and recomputing it
 would change the meaning of every results table that cites it. Nothing but the
-script in the right-hand column writes either file, so a change of reference
-leaves a commit rather than happening as a by-product of a run.
+script in the right-hand column writes any of the three, so a change of
+reference leaves a commit rather than happening as a by-product of a run.
 
 For the bands, that by-product would be adding data to the index:
 
@@ -124,6 +133,43 @@ model that wrote it. Filling it from scratch takes about two minutes on the M4
 Pro, and `sentencepiece` in `requirements/base.txt` is there for this script
 alone.
 
+### The model registry
+
+docs/spec.md restricts every component to models released on or before
+2025-01-31, the close of the shared task's evaluation window. A model name does
+not carry that claim: `intfloat/multilingual-e5-base` was created in May 2023
+and had a commit landed on it in April 2026, so naming it without a revision
+loads weights the cutoff never covered while every date in the sentence stays
+true.
+
+`reference/model_releases.json` is where the claim lives. Each entry records
+when the repository was created, the newest commit dated on or before the
+cutoff, and — for a model that ships its own modelling code — the repository and
+commit of that code, since loading it executes it.
+
+    python scripts/verify_model_releases.py            # re-check against the hub
+    python scripts/verify_model_releases.py --offline   # check the file alone
+    python scripts/verify_model_releases.py --force     # rewrite the reference
+
+`llms4subjects.models.check_cutoff` reads it, and the two pipeline loaders that
+fetch weights — `stages.encoders.resolve` and `stages.reranker.resolve` — call
+it before any download, so a model the registry does not vouch for fails in a
+sentence rather than after a gigabyte. Those two are also where a config
+becomes the pinned revision actually loaded; `encoders.pinned` puts that
+revision into the artifact key, so cached vectors are served only to the
+weights that produced them.
+
+Two paths are recorded in the registry without reading it. The rejected
+baseline (`baseline/classifier.py`) loads `bert-base-multilingual-cased`
+unpinned — it predates the registry, it is a results row rather than a
+dependency, and re-running it needs the GPU host — and the translation cache is
+written once by a script rather than by a run. Both are entries in the file, so
+the writeup's model list is complete; gating the baseline is a loose end rather
+than a claim.
+
+Nothing else in the project reaches the hub API, and no run reads it:
+re-verification is the deliberate command above.
+
 `artifacts/` is ignored by git, along with the dataset itself
 (`TIBKAT_dataset/*.csv`, `GND_dataset/*.json`) and the sparse clone the rebuild
 fetches into `.cache/`. Nothing large is tracked; everything is rebuildable.
@@ -135,12 +181,17 @@ A rung of the experiment ladder is a committed YAML file in
 
 | file | index | models |
 |---|---|---|
-| `configs/rung1.yaml` | 8,000 documents, stratified | off-the-shelf encoder |
+| `configs/rung1.yaml` | 8,000 documents, stratified | `multilingual-e5-base`, off the shelf |
+| `configs/rung1-e5-large.yaml` | the same 8,000 | `multilingual-e5-large` — a screened encoder |
+| `configs/rung1-bge-m3.yaml` | the same 8,000 | `bge-m3` — a screened encoder |
+| `configs/rung1-gte-base.yaml` | the same 8,000 | `gte-multilingual-base` — a screened encoder |
 | `configs/rung1-knn.yaml` | the same 8,000 | the neighbour retriever alone |
 | `configs/rung1-dense.yaml` | unread — the label tower scores the vocabulary | the dense label retriever alone |
 | `configs/rung1-dense-german.yaml` | the same | the same, label text German-only |
 | `configs/rung1-lexical.yaml` | unread — BM25 over the labels' own strings | the lexical retriever alone |
 | `configs/rung1-lexical-german.yaml` | the same | the same, label text German-only |
+| `configs/rung1-rerank.yaml` | the same 8,000 | plus `bge-reranker-v2-m3` over the fused candidates |
+| `configs/rung1-rerank-base.yaml` | the same 8,000 | plus `bge-reranker-base` — the smaller screened reranker |
 | `configs/rung1-prior.yaml` | the same 8,000 | plus the 66-way classification-group prior |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |

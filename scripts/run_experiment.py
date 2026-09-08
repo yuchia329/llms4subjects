@@ -148,7 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     # Scored past the submission's 50 as well, because candidate generation
     # emits `fusion.candidates` and recall there is the ceiling every later
     # stage — reranking, adjudication — can only rank within.
-    ceiling = config.fusion.candidates
+    #
+    # With reranking on there is nothing past 50 to score: the stage returns the
+    # submission's own ranking, and the ceiling it worked inside belongs to the
+    # candidate stage, which `scripts/rerank_report.py` reports before and after.
+    reranked = config.reranker.enabled
+    ceiling = config.reranker.output_k if reranked else config.fusion.candidates
     report = evaluate(
         gold={record.id: record.subjects for record in records},
         predictions={
@@ -159,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         ks=tuple(OFFICIAL_KS) + (ceiling,),
     )
     print(render(report, ks=OFFICIAL_KS))
-    print(f"\ncandidate ceiling at {ceiling}: "
+    label = "reranked ranking" if reranked else "candidate ceiling"
+    print(f"\n{label} at {ceiling}: "
           f"micro R@{ceiling} {report.micro.recall(ceiling):.4f}, "
           f"official R@{ceiling} {report.official_macro.recall(ceiling):.4f}")
     print("  by band  " + "  ".join(

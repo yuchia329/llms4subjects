@@ -86,3 +86,36 @@ class FakeEncoder:
         values = np.random.default_rng(seed).normal(size=self._dimensions)
         vector = values.astype(np.float32)
         return vector / np.linalg.norm(vector)
+
+
+class FakeCrossEncoder:
+    """Deterministic pair scores in [0, 1] from a digest, counting what it read.
+
+    A real cross-encoder's ordering is a property of its weights, which the
+    testing decisions rule out asserting. What the reranker tests need is an
+    ordering that differs from the one fusion produced, is reproducible between
+    runs, and moves when either side of the pair changes — a digest gives all
+    three. `pairs` is what makes `input_k` observable.
+    """
+
+    def __init__(self):
+        self.calls: list[int] = []
+
+    @property
+    def pairs(self) -> int:
+        """Document-label pairs this model was actually asked to score."""
+        return sum(self.calls)
+
+    def score(self, pairs: Sequence[tuple[str, str]]) -> np.ndarray:
+        self.calls.append(len(pairs))
+        if not pairs:
+            return np.zeros(0, dtype=np.float32)
+        return np.array(
+            [self._score(document, label) for document, label in pairs],
+            dtype=np.float32,
+        )
+
+    @staticmethod
+    def _score(document: str, label: str) -> float:
+        digest = hashlib.sha256(f"{document}\x00{label}".encode()).digest()
+        return int.from_bytes(digest[:4], "big") / 0xFFFFFFFF

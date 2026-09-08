@@ -93,6 +93,13 @@ def predict(
 
             encoder = encoders.load(config.encoder, select_device(device))
 
+    if config.reranker.enabled and cross_encoder is None:
+        # Checked before any encoding, for the reason `_refuse_unbuilt_stages`
+        # is: an unregistered or misspelt reranker would otherwise fail after
+        # the index, the label tower and all three retrievers had been paid
+        # for, which on rung 2 is hours.
+        reranker.resolve(config.reranker)
+
     if config.reranker.enabled:
         # Resolved once, before retrieval, and handed down: the reranker reads
         # the same label rendering the label tower does, so a kNN-only run with
@@ -167,11 +174,20 @@ def retrieve(
 
     translations = _translations(config, translations, enabled)
 
+    # The embedding cache is keyed on the config with its encoder revision
+    # resolved to the registry's pin, not on the config as written: a config
+    # file carries no revision, so every revision of one model would otherwise
+    # share one cache entry and a re-pinned model would read back the old
+    # weights' vectors and report them as the new ones. An encoder handed in by
+    # a caller is exempt — it may not be the model the config names at all, so
+    # the registry has nothing to say about what produced those vectors.
+    keyed_as = config
     if encoder is None:
         from .hardware import select_device
 
         encoder = encoders.load(config.encoder, select_device(device))
-    encoder = CachedEncoder(encoder, store, config)
+        keyed_as = encoders.pinned(config)
+    encoder = CachedEncoder(encoder, store, keyed_as)
 
     return {
         name: _restrict(

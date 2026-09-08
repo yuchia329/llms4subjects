@@ -1,0 +1,57 @@
+# Rung 1 with `BAAI/bge-m3` (ticket 09).
+#
+# One line apart from configs/rung1.yaml. The one candidate whose forward pass
+# can also emit sparse term weights, which `stages.encoders.sparse_weights`
+# would hand to the lexical retriever — but the adapter for them is not built,
+# so this run is the dense tower and the same BM25 every other row uses. That is
+# what keeps the screen a comparison of encoders: had one row swapped its
+# lexical retriever too, its number would be two changes rather than one. What
+# the sparse path is worth is a separate row, once there is an encoder chosen to
+# spend it on.
+name: rung1-bge-m3
+
+encoder:
+  name: BAAI/bge-m3
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` in
+    # configs/rung1.yaml, because the screen's one variable is the encoder.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  # Candidate generation emits this many per record with provenance; the
+  # submission takes the top 50 and the rest are the reranker's input.
+  candidates: 100
+  # As tuned in configs/rung1.yaml; see the note on the kNN weight above.
+  rrf_k: 60
+
+notes: >
+  A screened encoder (ticket 09). Read only against the other three rung-1
+  encoder rows, all of which hold the index, the label text and the fusion
+  fixed. Its dense tower alone: the sparse term weights it could also emit are
+  not wired, so its lexical retriever is the same BM25 as everyone else's.

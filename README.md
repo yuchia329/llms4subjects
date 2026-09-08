@@ -35,8 +35,9 @@ baseline/               the rejected classifier, kept runnable as a results row
 configs/                one committed YAML per rung of the experiment ladder
 reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
-scripts/                run_experiment.py, ablate_retrievers.py, the fixture
-                        and band freeze commands
+scripts/                run_experiment.py, ablate_retrievers.py,
+                        screen_encoders.py, verify_model_releases.py, the
+                        fixture and band freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -64,7 +65,9 @@ dataset is rebuilt there rather than copied, and how adapters come back.
 ```
 python -m llms4subjects configs/rung2.yaml            # resolve a config: keys, device, cache hits
 python scripts/run_experiment.py configs/rung1-knn.yaml   # predict dev and score it
+python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300   # what reranking changes
 python scripts/translate_labels.py --report           # translation cache coverage
+python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
 pytest                                                # contract and invariant tests
 ```
 
@@ -238,6 +241,50 @@ cost one pass over the index. `--tune-weights` sweeps the weights and `rrf_k` on
 dev and prints the block to paste into a config. See
 [docs/results.md](docs/results.md) for what the table says.
 
+### Reranking
+
+`reranker.enabled` puts a cross-encoder between the candidates and the
+submission: it scores each record's text against each candidate's label text
+jointly, and returns the top `output_k` — 50, the submission length — with the
+retrievers' provenance intact. Off by default, and off means the fused ranking
+is returned untouched, so every earlier row in
+[docs/results.md](docs/results.md) still comes from the same call.
+
+`reranker.mix` decides what the model's opinion does to the ranking it was
+given. `replace` is the original contract — the cross-encoder's order wins — and
+it loses 0.06 micro R@10 on the 300-record dev sample it was screened over,
+because it wrecks the head band (−0.28) while gaining the zero-shot band
+(+0.15). `fuse` combines the two orders by reciprocal rank instead, and wins
+0.034 R@10 and 0.013 P@5 over the candidates it was handed. A mechanism that is
+right about different records than the one before it is a fusion problem rather
+than a replacement one, and this is the measurement that says so.
+
+Two off-the-shelf multilingual rerankers are screened before any GPU time is
+asked for, both pinned pre-cutoff in `reference/model_releases.json`, and which
+side of the pair is the query is a flag rather than a guess because these models
+are asymmetric:
+
+```
+python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300
+python scripts/rerank_report.py configs/rung1-rerank-base.yaml --sample 300 --query label
+```
+
+The harness prints the fused and reranked metrics side by side, each precision
+figure next to the maximum achievable at that k, the band and language
+breakdowns, and the calibration of the per-record confidence measure that
+`reranker.confidence` emits for the adjudicator to route on. It caches the
+model's scores rather than the ranking it produced, so `--sweep-mix` tunes
+`mix_weight` over six rankings through the real stage for the price of none.
+
+`confidence` reads any scored ranking, and which one it reads matters more than
+the reranker does: over the fused ranking it correlates +0.41 with per-record
+P@5, over the reranker's own relevance −0.05, whose most confident decile has
+66.7% of its records with no correct label at all. An off-the-shelf reranker on
+this task is confidently wrong. The whole screen — two models, both pairings,
+both label renderings, replacement against fusion, and the recommendation
+against spending a fourth GPU run on a fine-tune — is in
+[docs/results.md](docs/results.md).
+
 Predictions are restricted to the tib-core vocabulary whatever the index holds,
 which is what keeps a rung-3 all-subjects index from widening the label
 universe. Enabling a stage that is not built yet raises rather than being
@@ -247,6 +294,51 @@ that never ran.
 Encoding is the expensive part and it is cached by encoder plus a digest of the
 input texts, so the same dev split costs 106s once and 9s thereafter. See
 [docs/artifacts.md](docs/artifacts.md).
+
+## The model cutoff, and which encoder won
+
+Every component is restricted to models released on or before **2025-01-31**,
+the close of the SemEval-2025 Task 5 evaluation window, so the comparison
+against teams who competed in January 2025 is fair rather than flattered by
+later model progress. A model name does not carry that claim — both E5
+checkpoints this project started from had commits landed on them in April 2026 —
+so it is carried by [reference/model_releases.json](reference/model_releases.json),
+which records each model's creation date and pins it to the newest commit inside
+the cutoff:
+
+```
+python scripts/verify_model_releases.py --offline   # re-check the committed file
+python scripts/verify_model_releases.py --force     # re-derive it from the hub
+```
+
+`llms4subjects.models.check_cutoff` refuses a model the registry does not vouch
+for before any weights are fetched, and `stages.encoders.resolve` is what turns
+a config into the pinned revision actually loaded. A model that ships its own
+modelling code has that repository and commit pinned too, since loading it runs
+it.
+
+Four encoders were screened off the shelf at the 8,000-document rung-1 index,
+one config each, everything but the encoder held fixed:
+
+| encoder | dev micro R@10 | zero-shot band |
+|---|---:|---:|
+| `Alibaba-NLP/gte-multilingual-base` | **0.4724** | 0.2363 |
+| `BAAI/bge-m3` | 0.4702 | **0.2498** |
+| `intfloat/multilingual-e5-base` | 0.4149 | 0.2310 |
+| `intfloat/multilingual-e5-large` | 0.4063 | 0.1791 |
+
+```
+python scripts/screen_encoders.py configs/rung1.yaml configs/rung1-e5-large.yaml \
+    configs/rung1-bge-m3.yaml configs/rung1-gte-base.yaml
+```
+
+The screen refuses configs that differ in anything but their encoder, and refuses
+two configs naming the same one, because otherwise it ranks a retuning rather
+than a model. `multilingual-e5-large` scoring below its own base model is the
+result worth knowing: within one family the larger checkpoint was the better
+document-to-document encoder and the worse document-to-label one, and the label
+tower is what reaches the tail. Rungs 2 and 3 carry the top two forward; see
+[docs/results.md](docs/results.md).
 
 ## Evaluation
 

@@ -29,6 +29,12 @@ FREQUENCY_BANDS_FILE = REFERENCE_DIR / "frequency_bands.json"
 # `python scripts/translate_labels.py`; see docs/artifacts.md.
 LABEL_TRANSLATIONS_FILE = REFERENCE_DIR / "label_translations.json"
 
+# Every model any part of this project loads, with its release date and the
+# revision it is pinned to, so that "released on or before 2025-01-31" is a
+# checked fact rather than a comment. Regenerated only by
+# `python scripts/verify_model_releases.py --force`; see docs/artifacts.md.
+MODEL_RELEASES_FILE = REFERENCE_DIR / "model_releases.json"
+
 SPLIT_FILES = {
     "core_train": TIBKAT_DIR / "core_train.csv",
     "core_dev": TIBKAT_DIR / "core_dev.csv",

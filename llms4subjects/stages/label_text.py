@@ -190,6 +190,47 @@ def label_text(
     return "\n".join(lines)
 
 
+def name_text(
+    entry: VocabularyEntry,
+    qualifier_mode: str = DEFAULT_MODE,
+    name_qualifiers: Mapping[str, str] | None = None,
+    translations: Mapping[str, str] | None = None,
+) -> str:
+    """One entry as its preferred name alone, bilingual: ``Polymerisation / Polymerization``.
+
+    The field-marked form above is written for an encoder, which sees the whole
+    string as one point in a vector space and is helped by the classification
+    group and the synonyms around the name. A cross-encoder reads the pair as a
+    query and a passage, and a three-line record of a cataloguing entry is
+    neither; ticket 12 measures both forms rather than assuming which one a
+    reranker was trained to expect.
+    """
+    _check_mode(qualifier_mode)
+    if not entry.name:
+        return ""
+    qualifier = (name_qualifiers or {}).get(entry.code)
+    translations = translations or {}
+    german = render_term(entry.name, qualifier_mode, qualifier)
+    english = translate_term(entry.name, translations, qualifier_mode, qualifier)
+    return bilingual_text(german, english)
+
+
+def render_names(
+    entries: Iterable[VocabularyEntry],
+    qualifier_mode: str = DEFAULT_MODE,
+    name_qualifiers: Mapping[str, str] | None = None,
+    translations: Mapping[str, str] | None = None,
+) -> list[LabelText]:
+    """A vocabulary as preferred names alone, in the order given."""
+    return [
+        LabelText(
+            code=entry.code,
+            text=name_text(entry, qualifier_mode, name_qualifiers, translations),
+        )
+        for entry in entries
+    ]
+
+
 def render(
     entries: Iterable[VocabularyEntry],
     qualifier_mode: str = DEFAULT_MODE,

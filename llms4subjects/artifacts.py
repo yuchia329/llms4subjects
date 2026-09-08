@@ -243,6 +243,7 @@ class CachedEncoder:
         partial.replace(path)
         return vectors
 
+
 GROUP_PRIOR_STAGE = "group_prior"
 
 # The trained head, as two arrays and the column order they are in. An `.npz`
