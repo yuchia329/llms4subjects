@@ -19,13 +19,13 @@ number from that construction is meaningless. A test must make that class of mis
 
 **Blocked by:** 02, 03
 
-**Status:** ready-for-agent
+**Status:** done — 343a58b
 
-- [ ] A single call takes records plus configuration and returns ranked candidate lists
-- [ ] Exactly 50 codes are returned per record, in non-increasing score order, with no duplicates
-- [ ] Every returned code exists in the tib-core vocabulary regardless of index composition
-- [ ] Perturbing a record's own gold labels leaves its candidate set unchanged
-- [ ] Document embeddings are cached keyed by encoder and input revision, so a re-run does not recompute them
-- [ ] Index size is configurable independently of any training-set size
-- [ ] A dev micro Recall@10 number is recorded, with the band breakdown, in the results document
-- [ ] Disabling all retrievers yields empty results rather than an error
+- [x] A single call takes records plus configuration and returns ranked candidate lists
+- [x] Exactly 50 codes are returned per record, in non-increasing score order, with no duplicates
+- [x] Every returned code exists in the tib-core vocabulary regardless of index composition
+- [x] Perturbing a record's own gold labels leaves its candidate set unchanged
+- [x] Document embeddings are cached keyed by encoder and input revision, so a re-run does not recompute them
+- [x] Index size is configurable independently of any training-set size
+- [x] A dev micro Recall@10 number is recorded, with the band breakdown, in the results document
+- [x] Disabling all retrievers yields empty results rather than an error
