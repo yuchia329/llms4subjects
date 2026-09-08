@@ -6,9 +6,10 @@ configuration. Tests assert contract invariants here rather than reaching into
 stages whose behaviour is defined by external model weights.
 
 Wiring lands with the stages it wires; see docs/spec.md, "Testing Decisions".
-Ticket 04 wires the neighbour retriever; the calls the other retrievers and the
-late stages will hang from are here as refusals, so an experiment that enables
-one of them fails rather than reporting an ablation that never ran.
+Tickets 04 and 05 wire the neighbour and dense retrievers; the calls the lexical
+retriever and the late stages will hang from are here as refusals, so an
+experiment that enables one of them fails rather than reporting an ablation that
+never ran.
 """
 
 from __future__ import annotations
@@ -48,9 +49,9 @@ def predict(
     invariant that holds for any encoder. Left unset, the configured one is
     loaded onto `device`.
     """
-    _refuse_unbuilt_stages(config)
-
     enabled = [name for name in RETRIEVER_NAMES if config.retrievers[name].enabled]
+    _refuse_unbuilt_stages(config, enabled)
+
     if not enabled:
         # An ablation that turns everything off is a row in the results table.
         return [CandidateList(record.id, ()) for record in records]
@@ -74,22 +75,24 @@ def predict(
     return [candidates.top(CODES_PER_RECORD) for candidates in combined]
 
 
-# What is enabled by configuration but not built yet, and the ticket that builds
-# it. Every entry is deleted by the ticket that names it, and the refusal is
-# checked before any encoding, so an experiment that asks for one of these fails
-# in a second rather than after indexing. The alternative is worse than slow: a
-# flag that is silently ignored reports an ablation that never ran.
-UNBUILT_RETRIEVERS = {
-    "dense": "ticket 05: dense label retriever",
-    "lexical": "ticket 06: lexical retriever",
-}
+def _refuse_unbuilt_stages(
+    config: ExperimentConfig, enabled: Sequence[str]
+) -> None:
+    """Refuse anything the configuration enables and this code cannot do.
 
-
-def _refuse_unbuilt_stages(config: ExperimentConfig) -> None:
-    """Refuse anything the configuration enables and this code cannot do."""
-    for name, ticket in UNBUILT_RETRIEVERS.items():
-        if config.retrievers[name].enabled:
-            raise NotImplementedError(ticket)
+    Checked before any encoding, so an experiment that asks for a stage nobody
+    has built fails in a second rather than after indexing. The alternative is
+    worse than slow: a flag that is silently ignored reports an ablation that
+    never ran. Every refusal here is deleted by the ticket it names.
+    """
+    if len(enabled) > 1:
+        # All three retrievers exist as of ticket 06, and nothing combines them
+        # yet. Refused here rather than inside `_combine` so that a config
+        # asking for two of them fails before the vocabulary is embedded.
+        raise NotImplementedError(
+            "ticket 07: reciprocal rank fusion; one retriever at a time until "
+            f"then, and {', '.join(enabled)} are all enabled"
+        )
     if not config.label_text.bilingual:
         # The default is bilingual and nothing reads the flag yet, so the
         # German-only side of the ablation would otherwise score identically to
@@ -122,13 +125,35 @@ def _build(
 
     if name == "dense":
         index = indexes.build_label_index(
-            list(texts), [texts[code] for code in texts], encoder
+            list(texts), list(texts.values()), encoder
         )
         return retrievers.DenseLabelRetriever(index, encoder, settings)
 
+    variants = _label_variants(config, vocabulary, name_qualifiers)
     return retrievers.LexicalLabelRetriever(
-        list(texts), [texts[code] for code in texts], settings
+        _lexical_index(texts, variants, encoder), settings
     )
+
+
+def _lexical_index(
+    texts: Mapping[Code, str],
+    variants: Mapping[Code, tuple[str, ...]],
+    encoder: Encoder,
+) -> indexes.LexicalMatcher:
+    """The encoder's own term weights where it emits them, BM25 where it does not.
+
+    A model that emits sparse weights gives two retrievers for one forward pass,
+    so it is asked first, and asked over `texts` — the same label rendering the
+    dense tower reads. BM25 instead indexes `variants`, the labels' own surface
+    strings, which is what the 53.7%-against-23.0% verbatim measurement in
+    docs/spec.md was made over.
+    """
+    sparse = encoders.sparse_weights(encoder)
+    if sparse is not None:
+        return indexes.build_sparse_term_index(
+            list(texts), list(texts.values()), sparse
+        )
+    return indexes.build_lexical_index(list(variants), list(variants.values()))
 
 
 def _label_texts(
@@ -143,6 +168,16 @@ def _label_texts(
         config.label_text.include_definition,
     )
     return {entry.code: entry.text for entry in rendered}
+
+
+def _label_variants(
+    config: ExperimentConfig,
+    vocabulary: dict[str, VocabularyEntry],
+    name_qualifiers: Mapping[str, str] | None,
+) -> dict[Code, tuple[str, ...]]:
+    return label_text.variants(
+        vocabulary.values(), config.label_text.qualifiers, name_qualifiers
+    )
 
 
 def _restrict(

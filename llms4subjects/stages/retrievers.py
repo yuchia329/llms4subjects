@@ -24,7 +24,7 @@ from ..config import RetrieverConfig
 from ..contracts import Candidate, CandidateList, Record
 from ..contracts import Code
 from .encoders import Encoder
-from .indexes import DocumentIndex, LabelIndex
+from .indexes import DocumentIndex, LabelIndex, LexicalMatcher
 
 # Query vectors are scored against the whole index at once, so the similarity
 # block is held to a few hundred rows: 5,354 dev records against 32,043 indexed
@@ -189,31 +189,142 @@ def _ordered(scores: dict[Code, float]) -> list[tuple[Code, float]]:
 
 
 class DenseLabelRetriever:
-    """Document-to-label: score the document against every vocabulary entry."""
+    """Document-to-label: score the document against every vocabulary entry.
+
+    The component the design exists to provide. A neighbour harvest returns only
+    labels some indexed record already carries, and 8.5% of dev gold assignments
+    are carried by none of them — at any index size, since 812 test labels stay
+    zero-shot even with all 70,588 available documents indexed (docs/spec.md).
+    Scoring the document against all 79,427 label vectors is the only mechanism
+    that reaches those, so a label needs no training example to be predicted,
+    only a name.
+
+    The score is the cosine similarity itself rather than a rank, and it is not
+    clipped at zero the way the neighbour harvest clips: there is nothing to sum
+    here, so a negative similarity is a low rank and carries no further weight.
+    Fusion reads the rank; the reranker and the confidence analysis read the
+    score.
+    """
 
     name = "dense"
 
     def __init__(
         self, index: LabelIndex, encoder: Encoder, config: RetrieverConfig
     ):
-        raise NotImplementedError("ticket 05: dense label retriever")
+        self._index = index
+        self._encoder = encoder
+        self._config = config
 
     def retrieve(self, records: Sequence[Record]) -> list[CandidateList]:
-        raise NotImplementedError("ticket 05: dense label retriever")
+        if not records:
+            return []
+        if not len(self._index):
+            # An empty vocabulary is an ablation, not a crash.
+            return [CandidateList(record.id, ()) for record in records]
+
+        vectors = self._encoder.encode_documents([record.text for record in records])
+
+        results: list[CandidateList] = []
+        for start in range(0, len(records), QUERY_BATCH):
+            batch = records[start : start + QUERY_BATCH]
+            similarities = _similarities(
+                vectors[start : start + len(batch)], self._index.vectors
+            )
+            results.extend(
+                self._rank(record, row) for record, row in zip(batch, similarities)
+            )
+        return results
+
+    def _rank(self, record: Record, similarities: np.ndarray) -> CandidateList:
+        """The top `top_k` labels for one document, by similarity.
+
+        Partitioned rather than sorted: `top_k` is 100 of 79,427, and sorting
+        the whole vocabulary per record would be most of the retrieval time for
+        an ordering the last 79,327 rows never use.
+        """
+        top_k = min(self._config.top_k, len(self._index))
+        positions = self._select(similarities, top_k)
+        ranked = _ordered(
+            {self._index.codes[position]: float(similarities[position])
+             for position in positions}
+        )
+
+        return CandidateList(
+            record_id=record.id,
+            candidates=tuple(
+                Candidate(code=code, score=score, sources={self.name: rank})
+                for rank, (code, score) in enumerate(ranked)
+            ),
+        )
+
+    def _select(self, similarities: np.ndarray, top_k: int) -> list[int]:
+        """The `top_k` best-scoring positions, ties at the cutoff by code.
+
+        A partition leaves the tie at the cutoff to whatever order the vector
+        happened to be in, which would make membership of the candidate list
+        depend on vocabulary order — and ties are not hypothetical: one pair of
+        entries renders to identical text under the default qualifier mode and 87
+        pairs under the `stripped` ablation, so their similarities are equal to
+        the bit. `_ordered` breaks ties by code once a candidate is in the list;
+        this is the same rule applied to getting in.
+        """
+        partitioned = np.argpartition(-similarities, top_k - 1)[:top_k]
+        cutoff = similarities[partitioned].min()
+
+        above = [position for position in partitioned if similarities[position] > cutoff]
+        tied = np.flatnonzero(similarities == cutoff)
+        if len(tied) == top_k - len(above):
+            return above + list(tied)
+
+        by_code = sorted(tied, key=lambda position: self._index.codes[position])
+        return above + by_code[: top_k - len(above)]
 
 
 class LexicalLabelRetriever:
-    """Lexical matching over label strings."""
+    """Lexical matching over label strings, for the headings that appear verbatim.
+
+    German subject headings are compounds that a cataloguer often took straight
+    out of the title, and a dense encoder blurs exactly those matches: a label's
+    own name or one of its synonyms appears verbatim in the record text for
+    53.7% of German gold assignments against 23.0% of English ones
+    (docs/spec.md). So this retriever is expected to be strongly
+    language-asymmetric, and reporting the asymmetry is part of what it is for.
+
+    What does the matching is a `LexicalMatcher` — the encoder's own sparse term
+    weights where the model emits them, BM25 over the label strings where it
+    does not. Which one it is does not change this class, and both are built in
+    `indexes`.
+
+    Unlike the other two retrievers, this one can return fewer than `top_k`
+    candidates, and for an English record with no heading in its title it can
+    return none at all. That is a measurement rather than a failure: the
+    50-code output contract belongs to the pipeline, which fuses this with
+    retrievers that always fill.
+    """
 
     name = "lexical"
 
-    def __init__(
-        self,
-        codes: Sequence[Code],
-        texts: Sequence[str],
-        config: RetrieverConfig,
-    ):
-        raise NotImplementedError("ticket 06: lexical retriever")
+    def __init__(self, index: LexicalMatcher, config: RetrieverConfig):
+        self._index = index
+        self._config = config
 
     def retrieve(self, records: Sequence[Record]) -> list[CandidateList]:
-        raise NotImplementedError("ticket 06: lexical retriever")
+        if not records:
+            return []
+        if not len(self._index):
+            # An empty vocabulary is an ablation, not a crash.
+            return [CandidateList(record.id, ()) for record in records]
+
+        ranked = self._index.rank(
+            [record.text for record in records], self._config.top_k
+        )
+        return [
+            CandidateList(
+                record_id=record.id,
+                candidates=tuple(
+                    Candidate(code=code, score=score, sources={self.name: rank})
+                    for rank, (code, score) in enumerate(matches)
+                ),
+            )
+            for record, matches in zip(records, ranked)
+        ]

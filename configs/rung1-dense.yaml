@@ -1,0 +1,54 @@
+# Rung 1 with the document-to-label retriever alone (ticket 05).
+#
+# One flag apart from configs/rung1-knn.yaml, so the pair is the measurement the
+# design rests on: kNN scores 0.0000 in the zero-shot band by construction, and
+# this retriever is the only mechanism that can score above it. Standalone,
+# because a fused number would not say which retriever reached those labels.
+#
+# The `index` section is here unchanged rather than removed: a dense-only run
+# never reads the document index — it scores against all 79,427 vocabulary
+# vectors — and keeping the section identical is what makes the two files
+# comparable as one flag change rather than two different experiments.
+name: rung1-dense-e5-base
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  # Nothing reads this flag yet, so the rendering is German-only whatever it
+  # says here; ticket 08 makes it load-bearing and turns this row into the
+  # bilingual half of that ablation. It is `true` because the loader refuses
+  # `false` rather than scoring it identically to the default (see
+  # `_refuse_unbuilt_stages`), which is the opposite of what the word means and
+  # is why the refusal exists.
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: false
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: false
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  The label tower on its own: every vocabulary entry rendered field-marked and
+  German-only, scored against the document. Success is the first non-zero
+  zero-shot recall in this project, not the aggregate figure — a tower that
+  reaches unseen labels at all is what fusion has to work with.

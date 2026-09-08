@@ -75,6 +75,15 @@ def test_qualifier_mode_is_constrained_to_the_three_documented_modes():
         )
 
 
+def test_a_top_k_below_one_is_rejected():
+    """A retriever clamps `top_k` to its vocabulary, so a negative one would
+    quietly return all-but-three candidates and be reported as an ablation."""
+    with pytest.raises(ConfigError, match="top_k"):
+        load_experiment_text(
+            "name: k\nencoder: {name: e}\nretrievers: {dense: {top_k: -3}}\n"
+        )
+
+
 def test_unknown_corpus_is_rejected():
     with pytest.raises(ConfigError, match="core_trian"):
         load_experiment_text(

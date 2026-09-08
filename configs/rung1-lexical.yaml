@@ -1,0 +1,49 @@
+# Rung 1 with the lexical label retriever alone (ticket 06).
+#
+# One flag apart from configs/rung1-knn.yaml and configs/rung1-dense.yaml, so
+# the three rung-1 rows are one experiment measured three ways rather than three
+# experiments. This one reads no vectors at all: the encoder named below is
+# loaded only to be asked whether it emits sparse term weights, which
+# `multilingual-e5-base` does not, so the run is BM25 over the vocabulary's own
+# names and synonyms and nothing is embedded.
+#
+# The `encoder` and `index` sections stay identical to the other two files for
+# that comparability. A lexical-only run touches neither.
+name: rung1-lexical-bm25
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: false
+  dense:
+    enabled: false
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Verbatim heading matching on its own. The number to read is not the aggregate
+  but the gap between the German and English slices: a label's own name or a
+  synonym appears verbatim in the text for 53.7% of German gold assignments
+  against 23.0% of English ones, so this retriever is expected to be strongly
+  language-asymmetric, and that asymmetry is the deliverable.

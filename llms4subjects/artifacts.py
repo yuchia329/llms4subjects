@@ -161,6 +161,12 @@ def input_revision(texts: Sequence[str]) -> str:
     return digest.hexdigest()[:INPUT_REVISION_LENGTH]
 
 
+# What a model that emits sparse term weights offers on top of the dense
+# interface. Named here because this wrapper forwards exactly these and refuses
+# everything else, rather than standing in front of the whole encoder.
+SPARSE_METHODS = ("encode_sparse_documents", "encode_sparse_labels")
+
+
 class CachedEncoder:
     """An encoder that computes each set of texts once, then reads them back.
 
@@ -187,6 +193,22 @@ class CachedEncoder:
     @property
     def dimensions(self) -> int:
         return self._encoder.dimensions
+
+    def __getattr__(self, name: str):
+        """The wrapped encoder's sparse term weights, and nothing else, uncached.
+
+        They are term-to-weight maps rather than one matrix, so this cache — one
+        file per set of texts — has nothing to store them in yet. Forwarded
+        rather than hidden because hiding them would be worse than not caching
+        them: the lexical retriever asks the encoder whether it has weights, and
+        a wrapper that answered no on its behalf would silently build BM25
+        instead and report the wrong ablation.
+        """
+        if name not in SPARSE_METHODS:
+            raise AttributeError(
+                f"{type(self._encoder).__name__} behind a cache has no {name!r}"
+            )
+        return getattr(self._encoder, name)
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         return self._cached("documents", texts, self._encoder.encode_documents)

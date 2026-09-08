@@ -160,7 +160,7 @@ The retrievers are three, behind one interface:
 | retriever | mechanism | reaches |
 |---|---|---|
 | `knn` | subjects of the nearest indexed documents | labels some indexed record carries |
-| `dense` | the document scored against all 79,427 label vectors | any label, seen or not (ticket 05) |
+| `dense` | the document scored against all 79,427 label vectors | any label, seen or not |
 | `lexical` | label strings matched against the document text (ticket 06) | verbatim headings |
 
 A code's kNN score is the summed similarity of the neighbours carrying it, so
@@ -171,6 +171,18 @@ fill the 50-slot contract, and everything it finds there is ranked below
 everything harvested. Otherwise a code seen twice at neighbours 30 and 40 could
 outrank one seen at neighbour 2, and `neighbours` would be a suggestion rather
 than a parameter.
+
+The `dense` retriever is the one the design exists for. It renders every
+vocabulary entry as field-marked text, embeds all 79,427 of them, and scores the
+document against the whole tower, so a label is reachable by having a name
+rather than by having a training example. That is not a marginal gain: 8.5% of
+dev gold assignments are carried by no training record at all, and `rung1-knn`
+scores 0.0000 on them at every k by construction. Label text is German-only
+until ticket 08 adds the translation, `Definition` is off by default and
+available as an ablation (`label_text.include_definition`), and `Related
+Subjects` are not part of the text at all — see "Vocabulary and qualifier
+rendering" above and [docs/results.md](docs/results.md) for what each choice
+measures.
 
 Predictions are restricted to the tib-core vocabulary whatever the index holds,
 which is what keeps a rung-3 all-subjects index from widening the label

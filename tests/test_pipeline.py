@@ -21,7 +21,7 @@ from llms4subjects.config import load_experiment_text
 from llms4subjects.contracts import CODES_PER_RECORD
 from llms4subjects.pipeline import predict
 
-# kNN only: the dense and lexical retrievers arrive with tickets 05 and 06.
+# kNN only. One retriever at a time: fusing two arrives with ticket 07.
 KNN_ONLY = """
 name: fixture-knn
 encoder: {name: fixture/fake}
@@ -29,6 +29,16 @@ index: {corpora: [core_train]}
 retrievers:
   knn: {enabled: true, neighbours: 5, top_k: 100}
   dense: {enabled: false}
+  lexical: {enabled: false}
+"""
+
+
+# The dense retriever alone, which is the only configuration that can return a
+# label no indexed record carries.
+DENSE_ONLY = """
+retrievers:
+  knn: {enabled: false}
+  dense: {enabled: true, top_k: 100}
   lexical: {enabled: false}
 """
 
@@ -55,6 +65,12 @@ def index_records(fixture):
 @pytest.fixture(scope="module")
 def vocabulary(fixture):
     return corpus.vocabulary(fixture["vocabulary"])
+
+
+@pytest.fixture(scope="module")
+def vocabulary_size(vocabulary):
+    """Every entry is a label text, so the tower costs one encode per code."""
+    return len(vocabulary)
 
 
 def run(queries, index_records, vocabulary, tmp_path, extra="", encoder=None):
@@ -190,11 +206,15 @@ def test_disabling_the_only_retriever_changes_the_output(
 
 
 @pytest.mark.parametrize("name", ["dense", "lexical"])
-def test_a_retriever_that_is_not_built_yet_says_so(
+def test_combining_two_retrievers_says_what_is_missing(
     queries, index_records, vocabulary, tmp_path, name
 ):
-    """Silently ignoring an enabled retriever would report an untrue ablation."""
-    with pytest.raises(NotImplementedError, match="ticket"):
+    """All three retrievers exist; fusing them arrives with ticket 07.
+
+    Silently ranking by one retriever's scores, or by whichever ran last, would
+    report a fused ablation that never fused anything.
+    """
+    with pytest.raises(NotImplementedError, match="ticket 07"):
         run(
             queries,
             index_records,
@@ -216,6 +236,118 @@ def test_a_flag_nothing_reads_yet_is_refused(
             tmp_path,
             extra="\nlabel_text: {bilingual: false}\n",
         )
+
+
+# --- The dense label tower --------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def dense(queries, index_records, vocabulary, tmp_path_factory):
+    return run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path_factory.mktemp("dense"),
+        extra=DENSE_ONLY,
+    )
+
+
+def test_the_dense_retriever_fills_the_output_contract(dense, queries):
+    assert [result.record_id for result in dense] == [r.id for r in queries]
+    assert {len(result.candidates) for result in dense} == {CODES_PER_RECORD}
+    for result in dense:
+        scores = [candidate.score for candidate in result.candidates]
+        assert scores == sorted(scores, reverse=True), result.record_id
+        assert len(set(result.codes)) == len(result.codes), result.record_id
+
+
+def test_dense_candidates_are_attributed_to_the_dense_retriever(dense):
+    for result in dense:
+        for candidate in result.candidates:
+            assert set(candidate.sources) == {"dense"}
+
+
+def test_the_dense_retriever_returns_labels_the_index_does_not_carry(
+    dense, index_records
+):
+    """The whole reason the ticket exists: a label needs no training example.
+
+    kNN cannot do this at any index size or any k — `rung1-knn` scores 0.0000 in
+    the zero-shot band by construction (docs/results.md).
+    """
+    harvestable = {code for record in index_records for code in record.subjects}
+    unreachable = {code for result in dense for code in result.codes} - harvestable
+
+    assert unreachable
+
+
+def test_the_dense_retriever_stays_inside_the_vocabulary(dense, vocabulary):
+    for result in dense:
+        assert not set(result.codes) - set(vocabulary), result.record_id
+
+
+def test_dense_and_knn_do_not_return_the_same_ranking(dense, candidates):
+    """Two mechanisms, not one behind two flags."""
+    assert [r.codes for r in dense] != [r.codes for r in candidates]
+
+
+def test_label_embeddings_are_cached_across_runs(
+    queries, index_records, vocabulary, vocabulary_size, tmp_path
+):
+    """Keyed by encoder and label-text revision, through `CachedEncoder`."""
+    store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
+    first, second = corpus.FakeEncoder(), corpus.FakeEncoder()
+
+    for encoder in (first, second):
+        predict(
+            queries,
+            config(DENSE_ONLY),
+            vocabulary,
+            index_records,
+            store,
+            encoder=encoder,
+        )
+
+    assert first.encoded == len(queries) + vocabulary_size
+    assert second.encoded == 0
+
+
+def test_a_different_label_rendering_is_not_served_the_cached_vectors(
+    queries, index_records, vocabulary, vocabulary_size, tmp_path
+):
+    """`qualifiers` changes the label text, so it must change the vectors."""
+    store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
+    first, second = corpus.FakeEncoder(), corpus.FakeEncoder()
+
+    predict(queries, config(DENSE_ONLY), vocabulary, index_records, store,
+            encoder=first)
+    predict(
+        queries,
+        config(DENSE_ONLY + "\nlabel_text: {qualifiers: stripped}\n"),
+        vocabulary,
+        index_records,
+        store,
+        encoder=second,
+    )
+
+    assert second.encoded == vocabulary_size
+
+
+def test_the_definition_field_is_an_ablation_rather_than_a_default(
+    queries, index_records, vocabulary, tmp_path
+):
+    """Cataloguing instructions on 18.1% of labels; measured, not assumed."""
+    default = run(queries, index_records, vocabulary, tmp_path / "off",
+                  extra=DENSE_ONLY)
+    with_definition = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path / "on",
+        extra=DENSE_ONLY + "\nlabel_text: {include_definition: true}\n",
+    )
+
+    assert [r.codes for r in with_definition] != [r.codes for r in default]
 
 
 # --- Embeddings are computed once -------------------------------------------

@@ -152,6 +152,13 @@ class EvaluationReport:
     by_band: Mapping[str, Metrics]
     by_language: Mapping[str, Metrics]
     by_type: Mapping[str, Metrics]
+    # The same languages micro-averaged. Both are reported because they answer
+    # different questions and can disagree sharply: the official figure gives a
+    # three-record cell the same vote as a 1,522-record one, so a retriever
+    # whose behaviour genuinely differs by language — the lexical one, whose
+    # whole premise is that German headings appear verbatim and English ones do
+    # not — needs the assignment-weighted figure for the size of that gap.
+    by_language_micro: Mapping[str, Metrics] = field(default_factory=dict)
     by_cell: Mapping[Cell, Metrics] = field(default_factory=dict)
     divergence: Divergence = field(default_factory=lambda: Divergence({}))
     ks: tuple[int, ...] = OFFICIAL_KS
@@ -227,6 +234,10 @@ def evaluate(
             language: _official_average(group, ks)
             for language, group in _group(scored, lambda r: r.cell.language).items()
         },
+        by_language_micro={
+            language: _micro(group, ks)
+            for language, group in _group(scored, lambda r: r.cell.language).items()
+        },
         by_type={
             record_type: _official_average(group, ks)
             for record_type, group in _group(scored, lambda r: r.cell.record_type).items()
@@ -284,6 +295,7 @@ def render(
     # recoverable from the numbers.
     for title, group in (
         ("band [micro]", report.by_band),
+        ("language [micro]", report.by_language_micro),
         ("language [off.]", report.by_language),
         ("type [off.]", report.by_type),
     ):

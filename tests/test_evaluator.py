@@ -340,7 +340,9 @@ def test_render_narrows_to_the_requested_ks_and_slice_metric(report):
     assert "R@50" not in text
     assert "band [micro]" in text
     # The slice tables switch metric; the headline block always shows all three.
-    assert text.count("P@5") == 1 + 3
+    # One header for the headline block and one for each slice table: band,
+    # language micro, language official, type.
+    assert text.count("P@5") == 1 + 4
 
     with pytest.raises(ValueError, match="slice_metric"):
         render(report, slice_metric="accuracy")

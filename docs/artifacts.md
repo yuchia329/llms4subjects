@@ -47,6 +47,14 @@ index corpus, the records being predicted and the label tower all reach the same
 cache, and an ablation that changes anything downstream of the encoder re-encodes
 nothing at all: scoring dev costs 106s the first time and 9s after that.
 
+The label tower goes through the same door, which is what keys it by encoder and
+by label-text revision without a second mechanism: the 79,427 rendered label
+strings are the texts, so switching `label_text.qualifiers` or turning
+`include_definition` on re-encodes the tower while leaving every document vector
+in place, and a rung that changes only the index re-encodes neither. Encoding
+the 79,427 label texts costs about two minutes on the M4 Pro, once per
+rendering.
+
 The digest is over the texts themselves, so adding a document to the index or
 editing an abstract produces a different file rather than a stale hit. One file
 holds one whole matrix, which makes the unit of reuse the exact set of texts: an
@@ -94,6 +102,7 @@ A rung of the experiment ladder is a committed YAML file in
 |---|---|---|
 | `configs/rung1.yaml` | 8,000 documents, stratified | off-the-shelf encoder |
 | `configs/rung1-knn.yaml` | the same 8,000 | the neighbour retriever alone |
+| `configs/rung1-dense.yaml` | unread — the label tower scores the vocabulary | the dense label retriever alone |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
 

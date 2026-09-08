@@ -8,14 +8,19 @@ Vectors are L2-normalised on the way out, so every retriever downstream can
 treat a dot product as cosine similarity and no stage has to know which model
 produced the numbers.
 
-Ticket 04 needs one encoder; ticket 05 adds the remaining three and the sparse
-term weights, which is why `PREFIXES` is a table rather than a branch.
+Tickets 04 and 05 need one encoder and ticket 09 screens all four, which is why
+`PREFIXES` is a table rather than a branch. A model absent from that table gets
+no prefixes at all rather than E5's, which is the right default — a convention
+guessed for the wrong family costs more than none — but it does mean adding an
+encoder means adding its row, or its label tower is encoded under the document
+convention. Ticket 06 declares the sparse interface a model may also offer; the
+adapter that implements it arrives with the encoder that has it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
@@ -31,6 +36,35 @@ class Encoder(Protocol):
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray: ...
 
     def encode_labels(self, texts: Sequence[str]) -> np.ndarray: ...
+
+
+@runtime_checkable
+class SparseEncoder(Protocol):
+    """An encoder whose forward pass also emits sparse term weights.
+
+    BGE-M3 is the one of the four candidates that does. Where a model offers
+    them, they are the lexical retriever's scores, since they arrive from the
+    pass the dense tower has already paid for; where it does not, BM25 over the
+    label strings is built instead.
+    """
+
+    def encode_sparse_documents(
+        self, texts: Sequence[str]
+    ) -> Sequence[Mapping[str, float]]: ...
+
+    def encode_sparse_labels(
+        self, texts: Sequence[str]
+    ) -> Sequence[Mapping[str, float]]: ...
+
+
+def sparse_weights(encoder: Encoder) -> SparseEncoder | None:
+    """The encoder itself if it emits sparse term weights, otherwise nothing.
+
+    Asked rather than configured, so that switching to a model that has them
+    switches the lexical retriever over with it and a model that has not is
+    never asked for something it cannot do.
+    """
+    return encoder if isinstance(encoder, SparseEncoder) else None
 
 
 @dataclass(frozen=True)

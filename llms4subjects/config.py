@@ -96,6 +96,13 @@ class RetrieverConfig:
     # kNN only: neighbouring documents whose gold subjects are harvested.
     neighbours: int = 20
 
+    def __post_init__(self):
+        if self.top_k < 1:
+            # A retriever clamps `top_k` to the vocabulary it has, so a negative
+            # one would quietly return all-but-three candidates rather than
+            # failing, and be reported as a `top_k` ablation.
+            raise ConfigError(f"top_k must be at least 1, got {self.top_k}")
+
 
 @dataclass(frozen=True)
 class FusionConfig:

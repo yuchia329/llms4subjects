@@ -121,6 +121,46 @@ def render(
     ]
 
 
+def label_variants(
+    entry: VocabularyEntry,
+    qualifier_mode: str = DEFAULT_MODE,
+    name_qualifiers: Mapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    """The label's own surface strings: its preferred name and its synonyms.
+
+    Not the field-marked rendering. This is what a *lexical* match is against —
+    the measurement the lexical retriever exists for is that a label's own name
+    or one of its synonyms appears verbatim in the record text, for 53.7% of
+    German gold assignments against 23.0% of English ones (docs/spec.md). The
+    surrounding fields would only dilute it: ``Fachgebiet: Chemie`` is shared by
+    thousands of labels and describes none of them, and ``Definition`` holds
+    instructions to librarians.
+
+    Each string is returned separately rather than joined, so a label with nine
+    synonyms is not scored as one long document. Duplicates are dropped: a
+    synonym that renders to the preferred name under ``stripped`` would
+    otherwise count twice.
+    """
+    _check_mode(qualifier_mode)
+    qualifier = (name_qualifiers or {}).get(entry.code)
+
+    strings = [render_term(entry.name, qualifier_mode, qualifier)] if entry.name else []
+    strings += [render_term(name, qualifier_mode) for name in entry.alternate_names]
+    return tuple(dict.fromkeys(string for string in strings if string))
+
+
+def variants(
+    entries: Iterable[VocabularyEntry],
+    qualifier_mode: str = DEFAULT_MODE,
+    name_qualifiers: Mapping[str, str] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    """Every entry's surface strings, keyed by code, in the order given."""
+    return {
+        entry.code: label_variants(entry, qualifier_mode, name_qualifiers)
+        for entry in entries
+    }
+
+
 def count_qualifiers(
     entries: Sequence[VocabularyEntry] | Iterable[VocabularyEntry],
     name_qualifiers: Mapping[str, str] | None = None,
