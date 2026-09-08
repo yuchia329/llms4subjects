@@ -21,7 +21,7 @@ original design is not revived; it modelled a hierarchy the vocabulary does not 
 
 **Blocked by:** 02, 03
 
-**Status:** done
+**Status:** done — 33492b3
 
 - [x] The previous classifier trains on the clean tib-core training split and scores on dev — the test row is
       deferred to ticket 17, which opens the gold test set once; the path exists and is gated behind
