@@ -14,6 +14,15 @@ GND_DIR = REPO_ROOT / "GND_dataset"
 CONFIG_DIR = REPO_ROOT / "configs"
 ARTIFACT_DIR = REPO_ROOT / "artifacts"
 
+# Committed reference artifacts: small, tracked, and frozen on purpose. Unlike
+# `artifacts/`, nothing here is regenerated as a side effect of a run.
+REFERENCE_DIR = REPO_ROOT / "reference"
+
+# Label frequency bands, frozen against tib-core train counts so that growing
+# the index later cannot reclassify which labels count as tail. Regenerated
+# only by `python scripts/freeze_bands.py --force`; see docs/artifacts.md.
+FREQUENCY_BANDS_FILE = REFERENCE_DIR / "frequency_bands.json"
+
 SPLIT_FILES = {
     "core_train": TIBKAT_DIR / "core_train.csv",
     "core_dev": TIBKAT_DIR / "core_dev.csv",

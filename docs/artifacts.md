@@ -40,6 +40,25 @@ To see what a run will read and write before it starts:
 
     python -m llms4subjects configs/rung2.yaml
 
+## Frozen reference artifacts
+
+`reference/` is the opposite of `artifacts/`: small, tracked, and never written
+as a side effect of a run. It holds `frequency_bands.json`, the label frequency
+band assignment frozen against tib-core train counts.
+
+The distinction is the point. A cached artifact is a saved computation and can
+be deleted at any time; a frozen reference is a *decision*, and recomputing it
+would change the meaning of every results table that cites it. Only
+`scripts/freeze_bands.py --force` writes it, so a change of reference leaves a
+commit rather than happening as a by-product of adding data to the index:
+
+    python scripts/freeze_bands.py            # report the bands, refuse to overwrite
+    python scripts/freeze_bands.py --force    # rewrite the reference
+
+`scripts/build_eval_fixture.py --force` is the same shape for the committed
+evaluation fixture in `tests/fixtures/`, which pins the local evaluator to the
+organizers' scorer.
+
 `artifacts/` is ignored by git, along with the dataset itself
 (`TIBKAT_dataset/*.csv`, `GND_dataset/*.json`) and the sparse clone the rebuild
 fetches into `.cache/`. Nothing large is tracked; everything is rebuildable.

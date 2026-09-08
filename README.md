@@ -32,8 +32,9 @@ llms4subjects/          the pipeline, one module per stage under stages/
                         group_prior, reranker, adjudicator, evaluator, submission
 baseline/               the rejected classifier, kept runnable as a results row
 configs/                one committed YAML per rung of the experiment ladder
+reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
-scripts/                one-off analysis scripts
+scripts/                one-off analysis scripts, and the two freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -126,6 +127,62 @@ How much of the vocabulary each mode moves, from `qualifier_stats.json`:
 |---|---:|---:|---:|---:|---:|---:|
 | tib-core | 79,427 | 17,959 (22.6%) | 22,068 | 4,746 | 12,463 | 4,859 |
 | all | 204,739 | 61,557 (30.1%) | 77,583 | 24,772 | 40,600 | 12,211 |
+
+## Evaluation
+
+Every result the project reports goes through `llms4subjects.stages.evaluator`,
+which scores a mapping of gold label lists against a mapping of ranked
+predictions and returns both aggregations side by side:
+
+| aggregation | weighting | used for |
+|---|---|---|
+| micro | every gold assignment once | model selection |
+| official macro-over-cells | one vote per `<record type> × language` cell | the headline, comparable to the leaderboard |
+
+The organizers' arithmetic is reproduced exactly, rounding included, and
+`tests/test_evaluator.py` holds it there: for a committed fixture it runs their
+script end to end and asserts agreement at every k from 5 to 50, on the
+`Overall` row, on every cell and on both of their other two sheets.
+
+The two aggregations diverge, and the divergence is a result rather than a
+footnote. On the fixture, a cell holding one record — 2% of the records — carries
+45% of the official recall figure; `EvaluationReport.divergence` ranks the cells
+by how much of it they account for, and `render(report)` returns the whole
+report — both aggregations at all three metrics, then the slices — as text to
+append to the results document.
+
+Metrics slice by document language, record type, and label frequency band:
+
+| band | tib-core train occurrences | labels in the band | of those, in test | share of test assignments |
+|---|---|---:|---:|---:|
+| head | more than 100 | 65 | 65 | 16.0% |
+| torso | 10 to 100 | 1,543 | 1,384 | 44.5% |
+| tail | 1 to 9 | 12,999 | 2,748 | 30.7% |
+| zero | never seen | rest of the vocabulary | 992 | 8.9% |
+
+The first two columns are the frozen artifact; the last two are the test-side
+figures from [docs/spec.md](docs/spec.md), which is where they stay until ticket
+17 opens the test split.
+
+The band assignment is **frozen** in `reference/frequency_bands.json` and read,
+never derived, so adding documents to the index cannot reclassify which labels
+count as tail and quietly make one rung's tail number incomparable to the last.
+Growing the index genuinely would move labels — `test_frequency_bands.py` proves
+that on this data — which is why the file exists. Rewriting it is a deliberate
+act:
+
+```
+python scripts/freeze_bands.py            # report the bands, refuse to overwrite
+python scripts/freeze_bands.py --force    # rewrite the reference
+```
+
+`llms4subjects.stages.submission` writes the organizers' `<Type>/<lang>/<id>.json`
+tree with exactly 50 ranked codes per record, so a run can be validated against
+their script end to end. One limitation is theirs, not ours: their reader seeds
+its results with `de` and `en` and then indexes by directory name, so it raises
+`KeyError` on the French, Spanish, Czech, Turkish, Dutch and Japanese records the
+splits contain. The writer emits the true cell and those records are scored
+locally.
 
 ## The rejected baseline
 

@@ -12,10 +12,15 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
-from .contracts import Record, VocabularyEntry
-from .paths import NAME_QUALIFIER_FILES, SPLIT_FILES, VOCABULARY_FILES
+from .contracts import Code, Record, VocabularyEntry
+from .paths import (
+    FREQUENCY_BANDS_FILE,
+    NAME_QUALIFIER_FILES,
+    SPLIT_FILES,
+    VOCABULARY_FILES,
+)
 
 # Some abstracts are long enough to trip the default csv field limit.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
@@ -64,6 +69,63 @@ def load_name_qualifiers(
         return {}
     with _open(source) as handle:
         return json.load(handle)
+
+
+# The band a label falls in when the frozen reference does not name it: it was
+# never seen in tib-core train, which is what "zero-shot" means here.
+UNSEEN_BAND = "zero"
+
+
+def frequency_band_reference(path: str | Path | None = None) -> dict:
+    """The frozen band reference, verbatim, including its provenance block."""
+    source = Path(path) if path is not None else FREQUENCY_BANDS_FILE
+    with _open(source) as handle:
+        return json.load(handle)
+
+
+def frequency_bands(path: str | Path | None = None) -> dict[Code, str]:
+    """Every label the frozen reference names, mapped to its band.
+
+    Labels absent from the mapping are `zero` by construction, so callers read
+    it with `bands.get(code, UNSEEN_BAND)` rather than expecting a total map:
+    enumerating the zero band would mean listing most of a 79,427-code
+    vocabulary to say nothing about it.
+
+    The assignment is read, never derived, so no amount of extra index data can
+    move a label between bands. That is the whole point of freezing it.
+    """
+    reference = frequency_band_reference(path)
+    return {
+        code: band
+        for band, labels in reference["labels"].items()
+        for code in labels
+    }
+
+
+def label_counts(path: str | Path | None = None) -> dict[Code, int]:
+    """Frozen tib-core train occurrence count per label, for band migration."""
+    reference = frequency_band_reference(path)
+    return {
+        code: count
+        for labels in reference["labels"].values()
+        for code, count in labels.items()
+    }
+
+
+def band_for_count(count: int, boundaries: Iterable[Mapping[str, Any]]) -> str:
+    """The band an occurrence count falls in, per the reference's own boundaries.
+
+    Driven by the boundaries as recorded in the frozen artifact rather than by a
+    constant, so the only statement of where the bands begin is the one that
+    shipped with the assignment. Reporting band migration under a larger index
+    means asking this what a grown count *would* have been; it is not how a
+    label's band is looked up, which is `frequency_bands`.
+    """
+    for boundary in boundaries:
+        low, high = boundary["min"], boundary["max"]
+        if count >= low and (high is None or count <= high):
+            return str(boundary["band"])
+    return UNSEEN_BAND
 
 
 def data_revision(paths: Iterable[str | Path] | None = None) -> str:
