@@ -709,3 +709,64 @@ def test_the_prior_survives_every_retriever_being_disabled(
     )
 
     assert all(result.candidates == () for result in results)
+
+
+def test_an_enabled_prior_loads_the_configured_encoder_itself(
+    queries, index_records, vocabulary, tmp_path, monkeypatch
+):
+    """The one branch `run` cannot reach, because it always supplies an encoder.
+
+    A boosted run has to embed the records it is boosting, and it must do that
+    with the encoder the config names rather than one the caller happened to
+    hand in — otherwise the head would read vectors from a different model than
+    the one it was fitted on.
+    """
+    from llms4subjects.stages import encoders
+
+    loaded = []
+
+    def fake_load(config, device):
+        loaded.append((config.name, device))
+        return corpus.FakeEncoder()
+
+    monkeypatch.setattr(encoders, "load", fake_load)
+    store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
+
+    results = predict(
+        queries,
+        config(PRIOR_ON),
+        vocabulary,
+        index_records,
+        store,
+        prior=fake_prior(vocabulary),
+    )
+
+    assert [name for name, _ in loaded] == ["fixture/fake"]
+    assert {len(result.candidates) for result in results} == {CANDIDATES}
+
+
+def test_an_unbuilt_stage_is_refused_before_any_model_loads(
+    queries, index_records, vocabulary, tmp_path, monkeypatch
+):
+    """A refusal after a model load is a refusal that cost a download.
+
+    The prior resolves its encoder before retrieval, so the refusals have to
+    come first or enabling the prior would move them behind a model load.
+    """
+    from llms4subjects.stages import encoders
+
+    def refuse_load(*args, **kwargs):
+        raise AssertionError("a refused configuration loaded model weights")
+
+    monkeypatch.setattr(encoders, "load", refuse_load)
+    store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
+
+    with pytest.raises(NotImplementedError, match="ticket 13"):
+        predict(
+            queries,
+            config(PRIOR_ON + "\nadjudication: {enabled: true}\n"),
+            vocabulary,
+            index_records,
+            store,
+            prior=fake_prior(vocabulary),
+        )

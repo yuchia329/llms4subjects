@@ -147,19 +147,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     group_of_code = group_prior.group_of_code(inputs.vocabulary.values())
 
-    scorer = _Scorer(records)
-    rows = {
-        weight: scorer.score(
-            group_prior.apply_prior(
-                fused,
-                distributions,
-                group_of_code,
-                dataclasses.replace(config.group_prior, weight=weight),
-            )
+    boosted = {
+        weight: group_prior.apply_prior(
+            fused,
+            distributions,
+            group_of_code,
+            dataclasses.replace(config.group_prior, weight=weight),
         )
         for weight in WEIGHT_GRID
     }
-    _check_identity(fused, rows, scorer)
+    _check_identity(fused, boosted[0.0])
+
+    scorer = _Scorer(records)
+    rows = {weight: scorer.score(ranking) for weight, ranking in boosted.items()}
 
     _table(rows)
     _band_table(rows, config.group_prior.weight)
@@ -186,10 +186,18 @@ class _Scorer:
         )
 
 
-def _check_identity(fused, rows, scorer) -> None:
-    """Weight 0 must be the unboosted ranking, or the sweep is not a sweep."""
-    unboosted = scorer.score(fused)
-    if rows[0.0].micro.recall(SELECTION_K) != unboosted.micro.recall(SELECTION_K):
+def _check_identity(
+    fused: Sequence[CandidateList], unboosted: Sequence[CandidateList]
+) -> None:
+    """Weight 0 must be the unboosted ranking, or the sweep is not a sweep.
+
+    Compared code by code rather than by a metric: two rankings that differ
+    below k agree on recall at k, so a scored comparison would pass on a boost
+    that had moved something.
+    """
+    if [result.codes for result in unboosted] != [
+        result.codes for result in fused
+    ]:
         raise AssertionError(
             "a zero-weight boost changed the ranking; the ablation's own "
             "baseline row is not the unboosted one"

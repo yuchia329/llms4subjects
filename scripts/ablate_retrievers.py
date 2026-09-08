@@ -92,6 +92,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # This table is `retrieve` followed by `combine`, which is candidate
+    # generation and nothing after it. A config that also enables a stage
+    # `predict` applies to the fused list would have every row printed under
+    # its name with that stage never run — the silently ignored flag this
+    # project refuses elsewhere.
+    beyond = [
+        name
+        for name in ("group_prior", "reranker", "adjudication")
+        if getattr(config, name).enabled
+    ]
+    if beyond:
+        print(
+            f"{args.config} enables {', '.join(beyond)}, which this table does "
+            "not apply: it fuses retriever subsets and stops. Use the config "
+            "with those off, or the ablation script for the stage itself."
+        )
+        return 1
+
     try:
         inputs = load_inputs(config, args.split, args.limit)
     except MissingDataset as error:

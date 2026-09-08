@@ -802,7 +802,7 @@ is settled, rather than a fourth variant of rung 1.
 
 ## rung1 — the subject-area group prior
 
-    python scripts/train_group_prior.py configs/rung1-prior.yaml   # fit the head, 12s
+    python scripts/train_group_prior.py configs/rung1-prior.yaml   # fit the head, 21s
     python scripts/ablate_group_prior.py configs/rung1-prior.yaml  # sweep the weight
     python scripts/run_experiment.py configs/rung1-prior.yaml
 
@@ -821,8 +821,9 @@ candidate is a filter whatever it is called. It is applied after fusion, so it
 reorders the 100 candidates and cannot change which 100 they are — the candidate
 ceiling in every row below is the unboosted one.
 
-Fitting costs 11 s on the M4 Pro once the document vectors are cached, so this
-is not a fourth GPU run.
+Fitting the 66 regressions costs 6-9 s on the M4 Pro once the document vectors
+are cached, and the whole command 21 s including the model load and the accuracy
+report below, so this is not a fourth GPU run.
 
 ### The classifier, on its own
 

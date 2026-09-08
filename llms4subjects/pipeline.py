@@ -30,9 +30,11 @@ from .stages import (
     group_prior,
     indexes,
     label_text,
+    reranker,
     retrievers,
 )
 from .stages.encoders import Encoder
+from .stages.reranker import CrossEncoder
 
 # The retrievers that render the vocabulary. `knn` is not one of them: it
 # harvests the gold subjects of neighbouring documents, so no label-text flag —
@@ -48,6 +50,7 @@ def predict(
     store: ArtifactStore,
     device: str = "auto",
     encoder: Encoder | None = None,
+    cross_encoder: CrossEncoder | None = None,
     name_qualifiers: Mapping[str, str] | None = None,
     translations: Mapping[str, str] | None = None,
     prior: group_prior.GroupPrior | None = None,
@@ -58,19 +61,49 @@ def predict(
     being retrieved from; they are separate arguments so that no record can
     contribute its own gold subjects to its own candidate set.
 
-    `encoder` is for tests, which must not download model weights to assert an
-    invariant that holds for any encoder. Left unset, the configured one is
-    loaded onto `device`. `prior` is the same for the group-prior head, which is
-    otherwise read from the artifact store.
-    """
-    if config.group_prior.enabled and encoder is None:
-        # Loaded here rather than inside `retrieve` so the prior and the
-        # retrievers share one set of weights: the prior reads the same document
-        # vectors the retrievers do, and the cache serves them to whichever asks
-        # second.
-        from .hardware import select_device
+    `encoder` and `cross_encoder` are for tests, which must not download model
+    weights to assert an invariant that holds for any model. Left unset, the
+    configured ones are loaded onto `device`. `prior` is the same for the
+    group-prior head, which is otherwise read from the artifact store.
 
-        encoder = encoders.load(config.encoder, select_device(device))
+    With reranking off this returns the fused top `fusion.candidates`; with it
+    on, the reranked `reranker.output_k`, which is the submission's 50. The
+    recall ceiling is therefore a property of the candidate stage and is
+    measured through `retrieve`, not here.
+    """
+    if config.group_prior.enabled:
+        # Both of these before any model loads or any encoding, for the reason
+        # `_refuse_unbuilt_stages` exists: a boosted config whose head has not
+        # been fitted would otherwise index, retrieve and fuse, and only then
+        # discover that the stage it was run for cannot run.
+        _refuse_unbuilt_stages(
+            config,
+            [name for name in RETRIEVER_NAMES if config.retrievers[name].enabled],
+        )
+        if prior is None:
+            from .artifacts import load_group_prior
+
+            prior = load_group_prior(store, config)
+        if encoder is None:
+            # Loaded here rather than inside `retrieve` so the prior and the
+            # retrievers share one set of weights: the prior reads the same
+            # document vectors the retrievers do, and the cache serves them to
+            # whichever asks second.
+            from .hardware import select_device
+
+            encoder = encoders.load(config.encoder, select_device(device))
+
+    if config.reranker.enabled:
+        # Resolved once, before retrieval, and handed down: the reranker reads
+        # the same label rendering the label tower does, so a kNN-only run with
+        # reranking on has a label-text reader after all, and a translation map
+        # loaded twice would be 3 MB read twice for one vocabulary.
+        translations = _translations(
+            config,
+            translations,
+            [name for name in RETRIEVER_NAMES if config.retrievers[name].enabled],
+            also_read=True,
+        )
 
     per_retriever = retrieve(
         records,
@@ -89,10 +122,22 @@ def predict(
     else:
         fused = combine(per_retriever, config)
 
-    if not config.group_prior.enabled:
+    if config.group_prior.enabled:
+        fused = _boost(
+            records, fused, config, vocabulary, store, device, encoder, prior
+        )
+
+    if not config.reranker.enabled:
         return fused
-    return _boost(
-        records, fused, config, vocabulary, store, device, encoder, prior
+    return _rerank(
+        records,
+        fused,
+        config,
+        vocabulary,
+        device,
+        cross_encoder,
+        name_qualifiers,
+        translations or {},
     )
 
 
@@ -148,7 +193,7 @@ def _boost(
     store: ArtifactStore,
     device: str,
     encoder: Encoder | None,
-    prior: group_prior.GroupPrior | None,
+    prior: group_prior.GroupPrior,
 ) -> list[CandidateList]:
     """The fused candidates, reordered towards the groups the prior finds likely.
 
@@ -156,23 +201,20 @@ def _boost(
     scores rather than the candidate set: it cannot change the recall ceiling,
     only which of those candidates the reranker and the submission see first.
 
-    The head is read from the artifact store unless one is handed in, for the
-    reason the translation cache is loaded rather than requested — a harness
-    that forgot it would score an unboosted run under a boosted config's name.
+    The head is resolved by the caller — `predict` reads it from the artifact
+    store before retrieving, for the reason the translation cache is loaded
+    rather than requested: a harness that forgot it would score an unboosted
+    run under a boosted config's name.
     """
-    if prior is None:
-        from .artifacts import load_group_prior
-
-        prior = load_group_prior(store, config)
-
     if encoder is None:
         from .hardware import select_device
 
         encoder = encoders.load(config.encoder, select_device(device))
     cached = CachedEncoder(encoder, store, config)
 
-    # The same texts the retrievers embedded, so this is a cache hit on every
-    # run where any retriever is enabled.
+    # The same texts the two embedding retrievers were handed, so this is a
+    # cache hit wherever either of them ran. A lexical-only run embeds no
+    # record, and there the boost pays for the split itself.
     vectors = cached.encode_documents([record.text for record in records])
     return group_prior.apply_prior(
         fused,
@@ -182,10 +224,64 @@ def _boost(
     )
 
 
+def _rerank(
+    records: Sequence[Record],
+    fused: Sequence[CandidateList],
+    config: ExperimentConfig,
+    vocabulary: dict[str, VocabularyEntry],
+    device: str,
+    cross_encoder: CrossEncoder | None,
+    name_qualifiers: Mapping[str, str] | None,
+    translations: Mapping[str, str],
+) -> list[CandidateList]:
+    """The fused candidates, reordered by a cross-encoder and cut to 50.
+
+    The label text is rendered here from the same flags the label tower reads,
+    rather than being handed down from retrieval: with kNN alone no retriever
+    renders anything, and the reranker still has to be told what a code says.
+    """
+    if cross_encoder is None:
+        from .hardware import select_device
+
+        cross_encoder = reranker.load(config.reranker, select_device(device))
+
+    return reranker.rerank(
+        records,
+        fused,
+        reranker_label_texts(config, vocabulary, name_qualifiers, translations),
+        config.reranker,
+        cross_encoder,
+    )
+
+
+def reranker_label_texts(
+    config: ExperimentConfig,
+    vocabulary: dict[str, VocabularyEntry],
+    name_qualifiers: Mapping[str, str] | None,
+    translations: Mapping[str, str],
+) -> dict[Code, str]:
+    """What the cross-encoder is shown for a candidate, per `reranker.label_form`.
+
+    A separate decision from what the label tower reads, and public for the same
+    reason `label_texts` is: `scripts/rerank_report.py` screens both forms, and a
+    screen that rendered them its own way would be measuring a text no run uses.
+    """
+    if config.reranker.label_form == "name":
+        rendered = label_text.render_names(
+            vocabulary.values(),
+            config.label_text.qualifiers,
+            name_qualifiers,
+            translations,
+        )
+        return {entry.code: entry.text for entry in rendered}
+    return label_texts(config, vocabulary, name_qualifiers, translations)
+
+
 def _translations(
     config: ExperimentConfig,
     supplied: Mapping[str, str] | None,
     enabled: Sequence[str],
+    also_read: bool = False,
 ) -> Mapping[str, str]:
     """The English half of the label text, or nothing when nobody reads it.
 
@@ -199,10 +295,14 @@ def _translations(
     the neighbour retriever alone, which harvests subjects from documents and
     never renders a label. So the ablation runs on a checkout that has no cache,
     and a kNN rung does not open a 3 MB file to ignore it.
+
+    `also_read` is how a reader outside the retrievers says so. The reranker is
+    one: it scores the document against a candidate's label text, so a kNN-only
+    run with reranking on renders the vocabulary after all.
     """
     if not config.label_text.bilingual:
         return {}
-    if not [name for name in enabled if name in READS_LABEL_TEXT]:
+    if not also_read and not [name for name in enabled if name in READS_LABEL_TEXT]:
         return {}
     if supplied is not None:
         return supplied
@@ -222,8 +322,6 @@ def _refuse_unbuilt_stages(
     worse than slow: a flag that is silently ignored reports an ablation that
     never ran. Every refusal here is deleted by the ticket it names.
     """
-    if config.reranker.enabled:
-        raise NotImplementedError("ticket 12: cross-encoder reranking")
     if config.adjudication.enabled:
         raise NotImplementedError("ticket 13: LLM adjudication")
 
@@ -247,7 +345,7 @@ def _build(
         index = indexes.build_document_index(selected, encoder, vocabulary)
         return retrievers.NeighbourRetriever(index, encoder, settings)
 
-    texts = _label_texts(config, vocabulary, name_qualifiers, translations)
+    texts = label_texts(config, vocabulary, name_qualifiers, translations)
 
     if name == "dense":
         index = indexes.build_label_index(
@@ -282,12 +380,19 @@ def _lexical_index(
     return indexes.build_lexical_index(list(variants), list(variants.values()))
 
 
-def _label_texts(
+def label_texts(
     config: ExperimentConfig,
     vocabulary: dict[str, VocabularyEntry],
     name_qualifiers: Mapping[str, str] | None,
     translations: Mapping[str, str],
 ) -> dict[Code, str]:
+    """The vocabulary rendered under this config's label-text flags.
+
+    Public because `scripts/rerank_report.py` reranks a candidate set it fused
+    itself and has to show the cross-encoder the same rendering the pipeline
+    would: a report that rendered labels its own way would be measuring a label
+    text no run uses.
+    """
     rendered = label_text.render(
         vocabulary.values(),
         config.label_text.qualifiers,
