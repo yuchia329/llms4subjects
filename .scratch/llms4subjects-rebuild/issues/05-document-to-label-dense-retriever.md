@@ -19,12 +19,12 @@ Success for this ticket is not the aggregate score. It is the first non-zero rec
 
 **Blocked by:** 01, 04
 
-**Status:** ready-for-agent
+**Status:** done — 1f2167f
 
-- [ ] All 79,427 vocabulary entries are indexed and scoreable for any document
-- [ ] Label text is field-marked, with subject area, preferred name and synonyms distinguishable
-- [ ] The definition field is excluded by default and available as an ablation flag
-- [ ] Qualifier rendering follows the flag established in ticket 01
-- [ ] Label embeddings are cached keyed by encoder and label-text revision
-- [ ] Recall in the zero-shot band is non-zero and recorded, alongside the other three bands
-- [ ] The retriever's standalone recall is recorded separately from any fused result
+- [x] All 79,427 vocabulary entries are indexed and scoreable for any document
+- [x] Label text is field-marked, with subject area, preferred name and synonyms distinguishable
+- [x] The definition field is excluded by default and available as an ablation flag
+- [x] Qualifier rendering follows the flag established in ticket 01
+- [x] Label embeddings are cached keyed by encoder and label-text revision
+- [x] Recall in the zero-shot band is non-zero and recorded, alongside the other three bands
+- [x] The retriever's standalone recall is recorded separately from any fused result
