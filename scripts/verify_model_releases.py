@@ -66,9 +66,10 @@ class Candidate:
 
 
 # The four encoders ticket 09 screens, plus the models the rest of the
-# repository already loads. `role` is what the model is loaded for, not a
-# capability of the model: the same registry serves the reranker (ticket 12) and
-# the adjudicator's pre-deadline model (ticket 13) when those name theirs.
+# repository already loads, all of them fetched from the hub. `role` is what the
+# model is loaded for, not a capability of the model. The adjudicator's hosted
+# models (ticket 13) are declared in `API_MODELS` instead, since they have no
+# repository to read.
 CANDIDATES = (
     Candidate(
         "intfloat/multilingual-e5-base",
@@ -123,6 +124,76 @@ CANDIDATES = (
 )
 
 
+@dataclass(frozen=True)
+class ApiModel:
+    """A hosted model, which has no weights and no commits to pin.
+
+    The adjudicator (ticket 13) calls a model over an API, so the evidence for
+    its date cannot be a hub commit: there is nothing to fetch. What stands in
+    its place is the provider's own dated model id — `claude-3-5-sonnet-20241022`
+    is the exact string the request names, and the date in it is the release the
+    cutoff is about — plus the announcement it was released in, recorded here as
+    `source` so a reader can check the claim rather than take it.
+
+    These entries are declared rather than derived, and `origin: api` in the
+    registry says so. That is weaker evidence than a fetched commit date, and
+    the writeup should say which kind each model has rather than presenting one
+    as the other.
+    """
+
+    name: str
+    provider: str
+    created: str
+    source: str
+    notes: str
+    # The one entry allowed to postdate the cutoff, and only for the
+    # adjudicator's appendix row (docs/spec.md). Declaring it here is what keeps
+    # `main` from refusing to write the registry over it.
+    appendix: bool = False
+
+    def entry(self) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "role": "adjudicator",
+            "created": self.created,
+            # The id is the pin: it is what the request names, and the provider
+            # holds it to one set of weights.
+            "revision": self.name,
+            "revision_date": self.created,
+            "source": self.source,
+            "origin": "api",
+            "provider": self.provider,
+            "notes": self.notes,
+        }
+        if self.appendix:
+            entry["appendix"] = True
+        return entry
+
+
+# The hosted models the adjudication stage may call. The headline row must use
+# one released on or before the cutoff; an appendix run that quantifies model
+# progress registers its current model here too, and `adjudication.appendix` is
+# what allows it to be used (see `stages.adjudicator.resolve`).
+API_MODELS = (
+    ApiModel(
+        "claude-3-5-sonnet-20241022",
+        "anthropic",
+        "2024-10-22",
+        "https://www.anthropic.com/news/3-5-models-and-computer-use",
+        "The headline adjudicator (ticket 13). Released 2024-10-22, inside the "
+        "cutoff, and the date is carried by the model id the API request names.",
+    ),
+    ApiModel(
+        "gpt-4o-2024-08-06",
+        "openai",
+        "2024-08-06",
+        "https://openai.com/index/introducing-structured-outputs-in-the-api/",
+        "The second provider path for the adjudicator, registered so that "
+        "`adjudication.model` can be swapped without the registry becoming the "
+        "reason it cannot. Also inside the cutoff, and dated by its id.",
+    ),
+)
+
+
 class HubUnreachable(RuntimeError):
     """The API could not be read, so nothing can be verified against it."""
 
@@ -158,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
         models = {
             candidate.name: _describe(candidate) for candidate in CANDIDATES
         }
+        # Merged rather than fetched: a hosted model has no commit history to
+        # walk, so its dates are the declarations in `API_MODELS`.
+        models.update({model.name: model.entry() for model in API_MODELS})
     except NoRevisionInCutoff as error:
         print(f"{error}\nRemove it from CANDIDATES rather than recording it.")
         return 1
@@ -172,17 +246,23 @@ def main(argv: list[str] | None = None) -> int:
         "models": models,
     }
 
+    # An appendix model postdates the cutoff on purpose; every other one that
+    # does is a mistake. Without that exception the appendix row docs/spec.md
+    # allows could never be registered, because this is the only writer.
     outside = [
         name
         for name, entry in models.items()
         if date.fromisoformat(entry["created"]) > MODEL_CUTOFF
+        and not entry.get("appendix")
     ]
     _report(models, outside)
 
     if outside:
         print(
             f"\n{len(outside)} model(s) postdate the cutoff and cannot be used; "
-            "remove them from CANDIDATES rather than recording them."
+            "remove them rather than recording them. A current model is "
+            "registrable only as the adjudicator's appendix row, by declaring "
+            "`appendix=True` on its API_MODELS entry."
         )
         return 1
 
@@ -209,12 +289,20 @@ def _offline() -> int:
     print(f"cutoff {registry.cutoff.isoformat()}, verified {registry.verified_at}\n")
     failures = 0
     for name, entry in registry.models.items():
-        late = max(entry.created, entry.revision_date) > registry.cutoff
+        late = (
+            max(entry.created, entry.revision_date) > registry.cutoff
+            and not entry.appendix
+        )
         failures += late
+        pinned = (
+            f"{entry.revision} (declared, {entry.provider})"
+            if entry.origin == "api"
+            else f"{entry.revision[:12]} ({entry.revision_date.isoformat()})"
+        )
+        flag = "FAIL" if late else ("APDX" if entry.appendix else "ok  ")
         print(
-            f"  {'FAIL' if late else 'ok  '}  {name:<45} created "
-            f"{entry.created.isoformat()}  pinned {entry.revision[:12]} "
-            f"({entry.revision_date.isoformat()})"
+            f"  {flag}  {name:<45} created "
+            f"{entry.created.isoformat()}  pinned {pinned}"
         )
     if failures:
         print(f"\n{failures} entry/entries postdate the cutoff.")
@@ -222,10 +310,20 @@ def _offline() -> int:
 
 
 def _report(models: dict[str, dict[str, Any]], outside: list[str]) -> None:
-    print(f"cutoff {MODEL_CUTOFF.isoformat()}, {len(models)} model(s) from the hub\n")
+    hosted = sum(entry.get("origin") == "api" for entry in models.values())
+    print(
+        f"cutoff {MODEL_CUTOFF.isoformat()}, {len(models) - hosted} model(s) "
+        f"from the hub and {hosted} declared hosted model(s)\n"
+    )
     for name, entry in models.items():
-        flag = "FAIL" if name in outside else "ok  "
-        pinned = f"{entry['revision'][:12]} ({entry['revision_date']})"
+        flag = "FAIL" if name in outside else (
+            "APDX" if entry.get("appendix") else "ok  "
+        )
+        pinned = (
+            f"{entry['revision']} (declared)"
+            if entry.get("origin") == "api"
+            else f"{entry['revision'][:12]} ({entry['revision_date']})"
+        )
         code = ""
         if entry.get("trust_remote_code"):
             code = (

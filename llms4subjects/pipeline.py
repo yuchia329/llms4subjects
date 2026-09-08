@@ -6,10 +6,9 @@ configuration. Tests assert contract invariants here rather than reaching into
 stages whose behaviour is defined by external model weights.
 
 Wiring lands with the stages it wires; see docs/spec.md, "Testing Decisions".
-Tickets 04 to 08 wire the three retrievers, the fusion that combines them and
-the bilingual label text two of them read; the calls the late stages will hang
-from are here as refusals, so an experiment that enables one of them fails
-rather than reporting an ablation that never ran.
+Every stage in the spec is now wired, and each is off by default, so a rung is
+described by which flags its config turns on rather than by which code path it
+takes.
 
 `predict` returns the fused top 100 with per-retriever provenance rather than
 the 50 the submission takes. The extra 50 are what the reranker reads and what
@@ -19,12 +18,13 @@ ranking becomes a submission.
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from typing import Mapping, MutableMapping, Sequence
 
-from .artifacts import ArtifactStore, CachedEncoder
+from .artifacts import ArtifactStore, CachedEncoder, load_responses, log_rejections
 from .config import RETRIEVER_NAMES, ExperimentConfig
 from .contracts import CandidateList, Code, Record, VocabularyEntry
 from .stages import (
+    adjudicator,
     encoders,
     fusion,
     group_prior,
@@ -33,6 +33,7 @@ from .stages import (
     reranker,
     retrievers,
 )
+from .stages.adjudicator import LanguageModel
 from .stages.encoders import Encoder
 from .stages.reranker import CrossEncoder
 
@@ -51,9 +52,11 @@ def predict(
     device: str = "auto",
     encoder: Encoder | None = None,
     cross_encoder: CrossEncoder | None = None,
+    language_model: LanguageModel | None = None,
     name_qualifiers: Mapping[str, str] | None = None,
     translations: Mapping[str, str] | None = None,
     prior: group_prior.GroupPrior | None = None,
+    responses: MutableMapping[str, str] | None = None,
 ) -> list[CandidateList]:
     """Rank vocabulary codes for each record.
 
@@ -61,25 +64,41 @@ def predict(
     being retrieved from; they are separate arguments so that no record can
     contribute its own gold subjects to its own candidate set.
 
-    `encoder` and `cross_encoder` are for tests, which must not download model
-    weights to assert an invariant that holds for any model. Left unset, the
-    configured ones are loaded onto `device`. `prior` is the same for the
-    group-prior head, which is otherwise read from the artifact store.
+    `encoder`, `cross_encoder` and `language_model` are for tests, which must
+    not download model weights — or spend an API budget — to assert an
+    invariant that holds for any model. Left unset, the configured ones are
+    loaded onto `device`. `prior` is the same for the group-prior head, and
+    `responses` for the adjudicator's cache; both are otherwise read from the
+    artifact store.
 
     With reranking off this returns the fused top `fusion.candidates`; with it
-    on, the reranked `reranker.output_k`, which is the submission's 50. The
+    on, the reranked `reranker.output_k`, which is the submission's 50.
+    Adjudication reorders the routed records and changes neither length. The
     recall ceiling is therefore a property of the candidate stage and is
     measured through `retrieve`, not here.
     """
+    if config.reranker.enabled and cross_encoder is None:
+        # Checked before any encoding: an unregistered or misspelt reranker
+        # would otherwise fail after the index, the label tower and all three
+        # retrievers had been paid for, which on rung 2 is hours.
+        reranker.resolve(config.reranker)
+
+    if config.adjudication.enabled and language_model is None:
+        # The same check, and one more reason for it: this stage's model is
+        # reached over an API, so an unregistered name, a model outside the
+        # cutoff without the appendix flag, an unknown provider or a missing
+        # key should all cost a sentence rather than a full retrieval pass.
+        # The client itself is built after retrieval, where it is used; what
+        # cannot wait is whether it could be built at all.
+        adjudicator.resolve(config.adjudication)
+        adjudicator.check_credentials(config.adjudication)
+
     if config.group_prior.enabled:
-        # Both of these before any model loads or any encoding, for the reason
-        # `_refuse_unbuilt_stages` exists: a boosted config whose head has not
-        # been fitted would otherwise index, retrieve and fuse, and only then
-        # discover that the stage it was run for cannot run.
-        _refuse_unbuilt_stages(
-            config,
-            [name for name in RETRIEVER_NAMES if config.retrievers[name].enabled],
-        )
+        # After the two resolutions above and before any encoding: a boosted
+        # config whose head has not been fitted would otherwise index, retrieve
+        # and fuse, and only then discover that the stage it was run for cannot
+        # run — and this branch loads the encoder, so every check that can be
+        # made without weights has to be made before it.
         if prior is None:
             from .artifacts import load_group_prior
 
@@ -93,14 +112,7 @@ def predict(
 
             encoder = encoders.load(config.encoder, select_device(device))
 
-    if config.reranker.enabled and cross_encoder is None:
-        # Checked before any encoding, for the reason `_refuse_unbuilt_stages`
-        # is: an unregistered or misspelt reranker would otherwise fail after
-        # the index, the label tower and all three retrievers had been paid
-        # for, which on rung 2 is hours.
-        reranker.resolve(config.reranker)
-
-    if config.reranker.enabled:
+    if config.reranker.enabled or config.adjudication.enabled:
         # Resolved once, before retrieval, and handed down: the reranker reads
         # the same label rendering the label tower does, so a kNN-only run with
         # reranking on has a label-text reader after all, and a translation map
@@ -134,15 +146,30 @@ def predict(
             records, fused, config, vocabulary, store, device, encoder, prior
         )
 
-    if not config.reranker.enabled:
-        return fused
-    return _rerank(
+    ranked = fused
+    if config.reranker.enabled:
+        ranked = _rerank(
+            records,
+            fused,
+            config,
+            vocabulary,
+            device,
+            cross_encoder,
+            name_qualifiers,
+            translations or {},
+        )
+
+    if not config.adjudication.enabled:
+        return ranked
+    return _adjudicate(
         records,
+        ranked,
         fused,
         config,
         vocabulary,
-        device,
-        cross_encoder,
+        store,
+        language_model,
+        responses,
         name_qualifiers,
         translations or {},
     )
@@ -168,7 +195,6 @@ def retrieve(
     table comes from a code path the pipeline does not use.
     """
     enabled = [name for name in RETRIEVER_NAMES if config.retrievers[name].enabled]
-    _refuse_unbuilt_stages(config, enabled)
     if not enabled:
         return {}
 
@@ -270,6 +296,70 @@ def _rerank(
     )
 
 
+def _adjudicate(
+    records: Sequence[Record],
+    ranked: Sequence[CandidateList],
+    fused: Sequence[CandidateList],
+    config: ExperimentConfig,
+    vocabulary: dict[str, VocabularyEntry],
+    store: ArtifactStore,
+    language_model: LanguageModel | None,
+    responses: MutableMapping[str, str] | None,
+    name_qualifiers: Mapping[str, str] | None,
+    translations: Mapping[str, str],
+) -> list[CandidateList]:
+    """The rankings, with the least-confident share reordered by a language model.
+
+    Routing reads the confidence of the *fused* ranking rather than of the
+    ranking being reordered, and that is the whole of the decision. Ticket 12
+    measured the three available signals against per-record precision: the fused
+    ranking's mean reciprocal-rank score correlates +0.41, the fused-with-
+    reranker ranking +0.37, and the cross-encoder's own relevance −0.05 — its
+    most confident decile has two thirds of its records with no correct label at
+    all. Under `reranker.mix: replace` the scores on `ranked` *are* that bare
+    relevance, so routing on the ranking in hand would send the model the
+    records the cross-encoder was surest about, which are the ones it ruined.
+
+    The model is shown the same field-marked label text the label tower renders,
+    for the reason the reranker is: the codes a run offers and the text it
+    offers them as should be one decision, not three.
+
+    The response cache and the rejection log are keyed on the configuration with
+    the model's pin resolved, so re-pinning the adjudicator is a new cache
+    rather than the old answers under a new model's name. A caller that handed
+    in its own model is exempt: the registry has nothing to say about what
+    produced those responses.
+    """
+    keyed_as = config
+    if language_model is None:
+        language_model = adjudicator.load(config.adjudication)
+        keyed_as = adjudicator.pinned(config)
+    if responses is None:
+        responses = load_responses(store, keyed_as)
+
+    routed = set(
+        adjudicator.route(
+            ranked,
+            config.adjudication,
+            confidences=[reranker.confidence(result) for result in fused],
+        )
+    )
+    by_id = {record.id: record for record in records}
+    lists = [result for result in ranked if result.record_id in routed]
+    results = adjudicator.adjudicate(
+        [by_id[result.record_id] for result in lists],
+        lists,
+        label_texts(config, vocabulary, name_qualifiers, translations),
+        config.adjudication,
+        model=language_model,
+        responses=responses,
+    )
+    # Written before the rankings are applied, so an interrupted run still
+    # leaves the evidence of what the model was refused for.
+    log_rejections(store, keyed_as, results)
+    return adjudicator.apply(ranked, results, config.adjudication)
+
+
 def reranker_label_texts(
     config: ExperimentConfig,
     vocabulary: dict[str, VocabularyEntry],
@@ -326,20 +416,6 @@ def _translations(
     from .corpus import load_label_translations
 
     return load_label_translations()
-
-
-def _refuse_unbuilt_stages(
-    config: ExperimentConfig, enabled: Sequence[str]
-) -> None:
-    """Refuse anything the configuration enables and this code cannot do.
-
-    Checked before any encoding, so an experiment that asks for a stage nobody
-    has built fails in a second rather than after indexing. The alternative is
-    worse than slow: a flag that is silently ignored reports an ablation that
-    never ran. Every refusal here is deleted by the ticket it names.
-    """
-    if config.adjudication.enabled:
-        raise NotImplementedError("ticket 13: LLM adjudication")
 
 
 def _build(

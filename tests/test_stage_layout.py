@@ -27,7 +27,14 @@ STAGE_MODULES = [
 
 STAGE_DIR = Path(__file__).resolve().parent.parent / "llms4subjects" / "stages"
 
-READ_CALLS = {"open", "read_csv", "read_json", "read_parquet", "load", "loads"}
+# What opens or reads a file. `json.loads` is deliberately not here: it parses a
+# string, and a stage that parses an API response or a model's answer is not
+# reading anything. The file half of `json.loads(path.read_text())` is caught by
+# `read_text` and `open` instead.
+READ_CALLS = {
+    "open", "read_csv", "read_json", "read_parquet", "read_text", "read_bytes",
+    "load",
+}
 
 
 def stage_files():

@@ -1371,3 +1371,134 @@ of size.
   R@10**, with no GPU spent and no model trained. That is the number
   fine-tuning has to beat, and it is what makes "how much of the score came from
   training" answerable at the end (docs/spec.md, story 10).
+
+## rung 1 + LLM adjudication — the routing, the ceiling, and what is still owed
+
+Ticket 13. The last stage: the least-confident fifth of the split is shown its
+top 30 candidates and a language model chooses among them. What follows is the
+half of that ticket which does not need an API key — routing, the constraint,
+the cost — measured on the whole dev split. The scored rows the ticket also asks
+for are named at the end as outstanding, with the command that produces them.
+
+    python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml --dry-run
+    python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml
+
+`--dry-run` routes, builds every prompt and calls nothing, so the shape of a run
+is checkable before any budget is spent on it.
+
+### The constraint, which is the point of the stage
+
+A generative model asked for GND codes freely produces identifiers that look
+entirely plausible and do not exist. So the model never authors one: it is shown
+a numbered list of the candidates with their label text and answers with codes
+copied from it, and the answer is checked against the set it was offered. A
+response naming anything else is rejected **whole** — not trimmed to its valid
+part, because a model that invented one identifier is not evidence about the
+ones it did not invent — logged to `artifacts/adjudicated/<key>/rejections.jsonl`
+with its reason, and the record keeps the ranking it arrived with.
+
+That makes the stage a reordering and nothing else: it cannot add a code, drop
+one, or change the length of the list, so the 50-code output contract survives
+whatever the model says, including nothing at all. The rejection path is covered
+by a test that feeds a recorded response naming `gnd:9999999-9` and asserts the
+log, the reason and the unchanged ranking.
+
+### Who gets routed, and how much harder they are
+
+On the 5,354 dev records, with `route_fraction: 0.2` over the fused ranking:
+
+| | records | gold/record | P@5 | R@10 | micro R@100 (the ceiling) |
+|---|---:|---:|---:|---:|---:|
+| the whole split | 5,354 | 2.44 | 0.1567 | 0.4149 | 0.6452 |
+| **the routed subset** | 1,070 | 2.09 | **0.0850** | **0.2604** | **0.5325** |
+
+Routing works, in the only sense that matters here: the fifth it picks scores
+0.0850 P@5 against the split's 0.1567 and 0.2604 R@10 against 0.4149. These are
+the records the retrievers were least sure of and were in fact worst on, which
+is what ticket 12's calibration table predicted — confidence over the *fused*
+ranking correlates +0.41 with per-record P@5, and this is that correlation spent
+rather than measured.
+
+The confidence band is narrow — 0.0238 minimum, 0.0300 median, 0.0502 maximum,
+with the routed set cut at ≤ 0.0265. That is a property of reciprocal rank
+fusion rather than of the records: RRF scores are sums of `1/(60 + rank)` terms,
+so they compress into a small range and a routing threshold is a percentile, not
+a meaningful absolute. Nothing downstream reads the threshold as a number, and
+nothing should.
+
+### What the stage can possibly be worth
+
+Reranking cannot add a candidate and neither can this, so the routed subset's
+own micro R@100 — **0.5325** — is what a perfect adjudicator would score on it
+at every k. Against the 0.2604 it starts from, that is 0.2721 of headroom at
+k=10, the largest any late stage in this project has been offered.
+
+But it is headroom on a fifth of the records. The routed subset holds 2,231 of
+the split's 13,085 gold assignments, or 17.05%, so the split-wide arithmetic is:
+
+    0.2721 × 0.1705 = +0.046 micro R@10, if the model were perfect
+
+That is the ceiling of the whole stage as configured, and it is worth stating
+before any money is spent rather than after: **routing 20% of records caps the
+achievable gain at +0.046**, against the +0.034 the off-the-shelf cross-encoder
+already takes for free. A larger `route_fraction` raises the cap and the bill in
+the same proportion, and the coverage curve (ticket 16) is where that trade
+belongs.
+
+### What a pass costs
+
+1,070 prompts, 8,506,615 characters — 7,950 mean, 11,429 longest — so roughly
+2.13M input tokens at four characters a token, and at most 548K output tokens at
+`max_output_tokens: 512`. At `claude-3-5-sonnet-20241022`'s list rates of $3 and
+$15 per million tokens that is about $6.40 in and up to $8.20 out; the rates are
+an assumption to re-check, the token counts are measured.
+
+Responses are cached under the `adjudicated` artifact stage and **written
+through as each one arrives**, so an interrupted run keeps what it has already
+bought and a re-score of a finished run bills nothing. Rate limits and provider
+overloads are retried with a doubling backoff; anything else — a bad key, an
+unknown model name — stops the pass rather than being written down as a
+thousand records the model got wrong. A failed call bought nothing and is not a
+constraint violation. The key covers the model's
+pinned id, the prompt revision and every knob that changes a prompt, so a
+reworded prompt is a new measurement rather than the old answers under a new
+name.
+
+### The model, and the cutoff
+
+The headline model is `claude-3-5-sonnet-20241022`, released 2024-10-22, inside
+the 2025-01-31 cutoff. Hosted models have no weights to pin, so the registry
+gained a second kind of entry for them: `origin: api`, pinned to the dated model
+id the request actually names — `claude-3-5-sonnet-20241022` is one set of
+weights where `claude-3-5-sonnet` is whichever is current — with the provider's
+announcement as the source. That is a *declared* date rather than a fetched one,
+and the registry records which kind of evidence each entry has rather than
+letting the two look alike.
+
+The appendix row docs/spec.md allows — a current model in this stage alone —
+needs `adjudication.appendix: true`, and the flag is refused on a model inside
+the cutoff. So the headline row and the model-progress row are told apart by
+configuration rather than by prose, and neither can be filed as the other.
+
+### What is still owed
+
+Two of the ticket's acceptance criteria need an API credential, which this
+environment does not have:
+
+- dev metrics for the routed subset and the full split **after** adjudication
+  (the "before" halves are the table above);
+- the appendix row on a current model.
+
+Everything they need is committed and exercised: the harness, the config, the
+cache, the constraint, the log, and the registry entry for the headline model.
+Each is one command away —
+
+    export ANTHROPIC_API_KEY=...
+    python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml
+
+— and the appendix row is that config with `adjudication.appendix: true` and a
+current model declared in `scripts/verify_model_releases.py`'s `API_MODELS` with
+`appendix=True`, which is the one thing that lets the registry hold a model the
+cutoff does not cover. Nothing else changes. Until those run, the honest summary of this stage is the ceiling above:
+**at most +0.046 micro R@10 for roughly 2.1M input tokens**, and no measured
+figure yet.

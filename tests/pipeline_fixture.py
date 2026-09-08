@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from datetime import date
 from pathlib import Path
 from typing import Sequence
 
@@ -18,6 +20,7 @@ import numpy as np
 
 from llms4subjects.contracts import Record, VocabularyEntry
 from llms4subjects.corpus import entry_from_release
+from llms4subjects.models import MODEL_CUTOFF, ModelRelease, Registry
 
 FIXTURE_FILE = Path(__file__).resolve().parent / "fixtures" / "corpus.json"
 
@@ -119,3 +122,70 @@ class FakeCrossEncoder:
     def _score(document: str, label: str) -> float:
         digest = hashlib.sha256(f"{document}\x00{label}".encode()).digest()
         return int.from_bytes(digest[:4], "big") / 0xFFFFFFFF
+
+
+class FakeLanguageModel:
+    """An adjudicator that answers from the prompt, counting what it was asked.
+
+    It reads the candidate codes out of the prompt it was given and returns some
+    of them in an order of its own, which is everything the adjudication tests
+    need: a valid response that differs from the ranking that produced it, and
+    no API key, network or bill. `answer` overrides that with a fixed response,
+    which is how the constraint-violation path is tested.
+
+    `prompts` is what makes the response cache observable — a model that is
+    never asked is a cache hit.
+    """
+
+    def __init__(self, answer: str | None = None, select: int = 10):
+        self._answer = answer
+        self._select = select
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        if self._answer is not None:
+            return self._answer
+        codes = _offered_codes(prompt)
+        chosen = sorted(codes, key=lambda code: hashlib.sha256(code.encode()).digest())
+        return json.dumps(chosen[: self._select])
+
+
+def _offered_codes(prompt: str) -> list[str]:
+    """The codes a v1 prompt numbers, in the order it lists them."""
+    return re.findall(r"^\s*\d+\.\s+(\S+)", prompt, flags=re.MULTILINE)
+
+
+def registry_with_recent_llm() -> Registry:
+    """A registry holding one pre-cutoff LLM and one released after it.
+
+    Built here rather than reached for in the committed file: the appendix rule
+    is about a model the cutoff does not cover, and the committed registry
+    should never hold one until an appendix run registers it.
+    """
+    return Registry(
+        cutoff=MODEL_CUTOFF,
+        verified_at=MODEL_CUTOFF,
+        models={
+            "claude-3-5-sonnet-20241022": ModelRelease(
+                name="claude-3-5-sonnet-20241022",
+                role="adjudicator",
+                created=date(2024, 10, 22),
+                revision="claude-3-5-sonnet-20241022",
+                revision_date=date(2024, 10, 22),
+                source="https://www.anthropic.com/news/3-5-models-and-computer-use",
+                origin="api",
+                provider="anthropic",
+            ),
+            "acme/tomorrow-llm": ModelRelease(
+                name="acme/tomorrow-llm",
+                role="adjudicator",
+                created=date(2026, 6, 1),
+                revision="acme/tomorrow-llm",
+                revision_date=date(2026, 6, 1),
+                source="https://example.invalid/tomorrow",
+                origin="api",
+                provider="anthropic",
+            ),
+        },
+    )

@@ -52,6 +52,26 @@
       "role": "baseline",
       "source": "https://huggingface.co/bert-base-multilingual-cased/commit/3f076fdb1ab68d5b2880cb87a0886f315b8146f8"
     },
+    "claude-3-5-sonnet-20241022": {
+      "created": "2024-10-22",
+      "notes": "The headline adjudicator (ticket 13). Released 2024-10-22, inside the cutoff, and the date is carried by the model id the API request names.",
+      "origin": "api",
+      "provider": "anthropic",
+      "revision": "claude-3-5-sonnet-20241022",
+      "revision_date": "2024-10-22",
+      "role": "adjudicator",
+      "source": "https://www.anthropic.com/news/3-5-models-and-computer-use"
+    },
+    "gpt-4o-2024-08-06": {
+      "created": "2024-08-06",
+      "notes": "The second provider path for the adjudicator, registered so that `adjudication.model` can be swapped without the registry becoming the reason it cannot. Also inside the cutoff, and dated by its id.",
+      "origin": "api",
+      "provider": "openai",
+      "revision": "gpt-4o-2024-08-06",
+      "revision_date": "2024-08-06",
+      "role": "adjudicator",
+      "source": "https://openai.com/index/introducing-structured-outputs-in-the-api/"
+    },
     "intfloat/multilingual-e5-base": {
       "created": "2023-05-19",
       "notes": "Screening baseline through tickets 04-08. E5's `query:`/`passage:` prefixes are handled by `stages.encoders.PREFIXES`.",

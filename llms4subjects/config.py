@@ -248,12 +248,97 @@ class RerankerConfig:
 
 @dataclass(frozen=True)
 class AdjudicationConfig:
+    """LLM selection over the top candidates, for the routed records only.
+
+    This is the one stage that bills per record, so every knob here that costs
+    money says so: `route_fraction` is how many records are paid for,
+    `candidates` and `document_chars` are how long each prompt is, and
+    `max_output_tokens` is what comes back.
+    """
+
     enabled: bool = False
     model: str | None = None
+    # The API model id actually called, filled in from the registry by
+    # `stages.adjudicator.pinned`, so the response cache cannot serve one
+    # model's answers under another's name.
+    revision: str | None = None
     # Roughly the least-confident 20% of records are routed onward.
     route_fraction: float = 0.2
     candidates: int = 30
+    # How many codes the model is asked to choose. Ten rather than fifty: the
+    # metrics the stage is aimed at are P@5 and R@10, and a model asked to rank
+    # thirty headings it half-recognises spends its answer on the tail.
+    select: int = 10
     prompt_revision: str = "v1"
+    # Characters of the abstract a prompt carries. A cost knob, and part of the
+    # cache key, so shortening it is a measurement rather than a saving.
+    document_chars: int = 4000
+    max_output_tokens: int = 512
+    # Zero, because the response cache assumes asking twice would get the same
+    # answer, and because this is a selection task rather than a writing one.
+    temperature: float = 0.0
+    # The one row docs/spec.md allows to use a model the cutoff does not cover,
+    # and only in this stage: "what eighteen months of model progress adds to
+    # an otherwise identical pipeline". Declared here so the appendix row and
+    # the headline row are told apart by configuration rather than by prose.
+    appendix: bool = False
+
+    def __post_init__(self):
+        # Imported here rather than at module scope: the adjudicator imports
+        # this module for its config type, and a top-level import either way
+        # would be a cycle.
+        from .stages.adjudicator import PROMPT_REVISIONS
+
+        if self.enabled and not self.model:
+            # Otherwise the run indexes, retrieves, fuses, reranks, and only
+            # then tracebacks out of an API call with an empty model name.
+            raise ConfigError(
+                "adjudication.model must name a model when "
+                "adjudication.enabled is true"
+            )
+        if not 0.0 <= self.route_fraction <= 1.0:
+            # Above one is not a fraction of anything; below zero would route
+            # the *most* confident records, which is not an ablation. Zero is
+            # one: the stage runs, bills nothing, and changes no ranking.
+            raise ConfigError(
+                "adjudication.route_fraction must be between 0 and 1, got "
+                f"{self.route_fraction}"
+            )
+        if self.candidates < 1:
+            raise ConfigError(
+                f"adjudication.candidates must be at least 1, got {self.candidates}"
+            )
+        if not 1 <= self.select <= self.candidates:
+            # Asking for more codes than were offered invites the model to
+            # invent the difference, which is the failure this stage exists to
+            # make impossible.
+            raise ConfigError(
+                f"adjudication.select ({self.select}) must be between 1 and "
+                f"adjudication.candidates ({self.candidates})"
+            )
+        if self.prompt_revision not in PROMPT_REVISIONS:
+            # A typo would otherwise be a new cache key and a prompt nobody
+            # wrote, so the whole routed subset would be re-billed against a
+            # prompt that does not exist.
+            raise ConfigError(
+                f"adjudication.prompt_revision must be one of "
+                f"{PROMPT_REVISIONS}, got {self.prompt_revision!r}"
+            )
+        if self.document_chars < 0:
+            raise ConfigError(
+                "adjudication.document_chars must not be negative, got "
+                f"{self.document_chars}"
+            )
+        if self.max_output_tokens < 1:
+            raise ConfigError(
+                "adjudication.max_output_tokens must be at least 1, got "
+                f"{self.max_output_tokens}"
+            )
+        if self.temperature < 0:
+            raise ConfigError(
+                f"adjudication.temperature must not be negative, got "
+                f"{self.temperature}"
+            )
 
 
 @dataclass(frozen=True)
@@ -283,6 +368,22 @@ class ExperimentConfig:
                 f"fusion.candidates ({self.fusion.candidates}); there would be "
                 "no such candidate to rerank"
             )
+        if self.adjudication.enabled:
+            # The adjudicator is shown the top of whatever the stage before it
+            # emitted, so asking for more than exist is silently the smaller
+            # number — and the run would report prompting with thirty
+            # candidates while prompting with twenty.
+            emitted, source = (
+                (self.reranker.output_k, "reranker.output_k")
+                if self.reranker.enabled
+                else (self.fusion.candidates, "fusion.candidates")
+            )
+            if self.adjudication.candidates > emitted:
+                raise ConfigError(
+                    f"adjudication.candidates ({self.adjudication.candidates}) "
+                    f"exceeds {source} ({emitted}); there would be no such "
+                    "candidate to offer"
+                )
 
     def section(self, name: str) -> dict[str, Any]:
         """One section as plain data, for artifact keying and manifests."""

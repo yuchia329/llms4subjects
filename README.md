@@ -36,8 +36,9 @@ configs/                one committed YAML per rung of the experiment ladder
 reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
 scripts/                run_experiment.py, ablate_retrievers.py,
-                        screen_encoders.py, verify_model_releases.py, the
-                        fixture and band freeze commands
+                        screen_encoders.py, adjudicate_report.py,
+                        verify_model_releases.py, the fixture and band
+                        freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -285,11 +286,38 @@ both label renderings, replacement against fusion, and the recommendation
 against spending a fourth GPU run on a fine-tune — is in
 [docs/results.md](docs/results.md).
 
+## Adjudication, and the identifiers a model may not invent
+
+The last stage shows the least-confident fifth of records their top 30
+candidates and asks a language model to choose among them. The constraint is the
+stage rather than a detail of it: a model asked for GND codes freely produces
+identifiers that look entirely plausible and do not exist, so it is shown a
+numbered list and its answer is checked against exactly that list. A response
+naming anything else is rejected whole — not trimmed to its valid part — logged
+to `artifacts/adjudicated/<key>/rejections.jsonl`, and the record keeps the
+ranking it arrived with. The stage can reorder and can do nothing else.
+
+```
+python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml --dry-run
+python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml
+```
+
+`--dry-run` routes, builds every prompt and calls nothing, so a run's shape and
+its bill are checkable before a key is spent on either. On dev it routes 1,070
+of 5,354 records, and they are the hard ones: 0.0850 P@5 against the split's
+0.1567. Because a reordering cannot add a candidate, the routed subset's own
+micro R@100 of 0.5325 bounds the whole stage at **+0.046 micro R@10 split-wide**
+even from a perfect model — a ceiling worth knowing before the 2.1M input tokens
+are spent, not after. Responses are cached and written through as each arrives,
+so an interrupted run keeps what it bought. See
+[docs/results.md](docs/results.md).
+
 Predictions are restricted to the tib-core vocabulary whatever the index holds,
 which is what keeps a rung-3 all-subjects index from widening the label
-universe. Enabling a stage that is not built yet raises rather than being
-ignored, because a silently skipped reranker would be reported as an ablation
-that never ran.
+universe. A stage that cannot run — an unregistered model, an unfitted prior —
+is refused before any weights are fetched, because a refusal that arrives after
+indexing costs hours and a flag that is silently ignored would be reported as an
+ablation that never ran.
 
 Encoding is the expensive part and it is cached by encoder plus a digest of the
 input texts, so the same dev split costs 106s once and 9s thereafter. See
@@ -316,6 +344,16 @@ for before any weights are fetched, and `stages.encoders.resolve` is what turns
 a config into the pinned revision actually loaded. A model that ships its own
 modelling code has that repository and commit pinned too, since loading it runs
 it.
+
+The adjudicator's model is hosted rather than downloaded, so there is no commit
+to fetch: those entries carry `origin: api` and are pinned to the dated model id
+the request names — `claude-3-5-sonnet-20241022` is one set of weights where
+`claude-3-5-sonnet` is whichever is current — with the provider's announcement
+as the source. A declared date is weaker evidence than a fetched one, and the
+registry says which kind each entry has rather than letting them look alike. The
+single appendix row docs/spec.md allows on a current model needs
+`adjudication.appendix: true`, and that flag is refused on a model inside the
+cutoff, so the two rows cannot be filed as each other.
 
 Four encoders were screened off the shelf at the 8,000-document rung-1 index,
 one config each, everything but the encoder held fixed:

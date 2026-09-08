@@ -1,0 +1,81 @@
+# Rung 1, plus LLM adjudication of the least-confident records (ticket 13).
+#
+#   python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml --sample 300
+#
+# The same candidates as configs/rung1.yaml, with the last stage turned on: the
+# least-confident fifth of the split is shown its top 30 candidates and a model
+# chooses among them. The stage cannot add a code, so this config's ceiling is
+# the recall of the candidates below it and everything measured here is a
+# reordering of them.
+#
+# Reranking stays off, for two reasons rather than one. The routing signal is
+# `reranker.confidence` read over the fused ranking, which ticket 12 measured to
+# correlate +0.41 with per-record P@5 against −0.05 for the cross-encoder's own
+# relevance; and a reranking pass costs 3.9 hours a dev split, which does not
+# belong under an experiment about what a language model adds. The two stages
+# compose — adjudication reads whatever ranking it is handed — so stacking them
+# is a later measurement, not a different pipeline.
+name: rung1-e5-base-adjudicate
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+adjudication:
+  enabled: true
+  # Released 2024-10-22, inside the 2025-01-31 model cutoff docs/spec.md
+  # declares, which reference/model_releases.json records: the date is carried
+  # by the model id the request names, so the headline row stays comparable to
+  # teams who competed in January 2025. The appendix row that quantifies model
+  # progress is a second config with `appendix: true` and a current model, and
+  # nothing else changed.
+  model: claude-3-5-sonnet-20241022
+  # The least-confident fifth, as docs/spec.md's story 34 asks: API cost
+  # proportional to benefit. The fraction is floored, so a run asked for 20%
+  # never bills for 21%.
+  route_fraction: 0.2
+  # The pipeline contract: the top 30 are offered, and a candidate below them
+  # cannot be promoted because it is never shown.
+  candidates: 30
+  select: 10
+  prompt_revision: v1
+  document_chars: 4000
+  max_output_tokens: 512
+  temperature: 0.0
+
+notes: >
+  The adjudication rung. Everything the model returns is checked against the
+  identifiers it was offered; a response naming anything else is rejected whole,
+  logged under artifacts/adjudicated/, and the record keeps the ranking it
+  arrived with — so the stage can reorder and can do nothing else.

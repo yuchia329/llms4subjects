@@ -70,15 +70,45 @@ def test_the_cutoff_is_the_one_the_spec_declares(registry):
 
 
 def test_every_registered_model_was_released_before_the_cutoff(registry):
+    """Except the one docs/spec.md allows, which has to say so about itself.
+
+    The appendix row exists to quantify what model progress adds to an otherwise
+    identical pipeline, so its model postdates the cutoff by construction. It is
+    only allowed to because it is declared: `appendix` on the entry, and
+    `adjudication.appendix` on the config that calls it.
+    """
     for name, entry in registry.models.items():
+        if entry.appendix:
+            assert entry.role == "adjudicator", f"{name} is not the appendix stage"
+            assert entry.created > registry.cutoff, (
+                f"{name} is inside the cutoff and does not need the appendix flag"
+            )
+            continue
         assert entry.created <= registry.cutoff, f"{name} was created after the cutoff"
 
 
 def test_every_registered_model_is_pinned_to_a_pre_cutoff_revision(registry):
     """A name alone resolves to today's weights; a revision is the actual claim."""
     for name, entry in registry.models.items():
-        assert FULL_COMMIT.match(entry.revision), f"{name} has no pinned revision"
-        assert entry.revision_date <= registry.cutoff, f"{name}'s revision is newer"
+        if entry.origin == "hub":
+            assert FULL_COMMIT.match(entry.revision), f"{name} has no pinned revision"
+        if not entry.appendix:
+            assert entry.revision_date <= registry.cutoff, f"{name}'s revision is newer"
+
+
+def test_a_hosted_model_is_pinned_to_the_dated_id_the_request_names(registry):
+    """An API model has no commit to pin, so the id is the pin.
+
+    Which is only a claim if the id is the one a request actually sends and the
+    provider is recorded next to it — `claude-3-5-sonnet-20241022` names one set
+    of weights, `claude-3-5-sonnet` names whichever is current.
+    """
+    hosted = [entry for entry in registry.models.values() if entry.origin == "api"]
+    assert hosted, "the adjudicator's models are hosted; none is registered"
+    for entry in hosted:
+        assert entry.revision == entry.name, f"{entry.name} is pinned to something else"
+        assert entry.provider, f"{entry.name} records no provider to call"
+        assert entry.created == entry.revision_date, entry.name
 
 
 def test_remote_code_is_pinned_too(registry):
@@ -98,8 +128,15 @@ def test_the_registry_records_what_it_was_verified_against(document):
     assert document["schema"] == 1
     assert document["verified_at"]
     for name, entry in document["models"].items():
-        # Where the date came from, so a reader can re-check it by hand.
-        assert entry["source"].startswith("https://huggingface.co/"), name
+        # Where the date came from, so a reader can re-check it by hand. A
+        # hosted model has no hub page; what stands in its place is the
+        # provider's announcement, and `origin` says which kind of evidence
+        # this entry rests on rather than letting the two look alike.
+        if entry.get("origin", "hub") == "hub":
+            assert entry["source"].startswith("https://huggingface.co/"), name
+        else:
+            assert entry["source"].startswith("https://"), name
+            assert not entry["source"].startswith("https://huggingface.co/"), name
 
 
 @pytest.mark.parametrize("path", config_paths(), ids=lambda path: path.name)

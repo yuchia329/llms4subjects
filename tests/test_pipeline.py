@@ -745,14 +745,18 @@ def test_an_enabled_prior_loads_the_configured_encoder_itself(
     assert {len(result.candidates) for result in results} == {CANDIDATES}
 
 
-def test_an_unbuilt_stage_is_refused_before_any_model_loads(
+def test_a_stage_that_cannot_run_is_refused_before_any_model_loads(
     queries, index_records, vocabulary, tmp_path, monkeypatch
 ):
     """A refusal after a model load is a refusal that cost a download.
 
     The prior resolves its encoder before retrieval, so the refusals have to
-    come first or enabling the prior would move them behind a model load.
+    come first or enabling the prior would move them behind a model load. The
+    adjudicator is the last stage and the most expensive one to discover late:
+    a run that indexed, retrieved and fused before failing on an unregistered
+    model name has spent hours on rung 2 to learn a spelling.
     """
+    from llms4subjects.models import UnregisteredModel
     from llms4subjects.stages import encoders
 
     def refuse_load(*args, **kwargs):
@@ -761,10 +765,13 @@ def test_an_unbuilt_stage_is_refused_before_any_model_loads(
     monkeypatch.setattr(encoders, "load", refuse_load)
     store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
 
-    with pytest.raises(NotImplementedError, match="ticket 13"):
+    with pytest.raises(UnregisteredModel):
         predict(
             queries,
-            config(PRIOR_ON + "\nadjudication: {enabled: true}\n"),
+            config(
+                PRIOR_ON
+                + "\nadjudication: {enabled: true, model: acme/unregistered}\n"
+            ),
             vocabulary,
             index_records,
             store,

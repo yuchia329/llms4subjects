@@ -85,6 +85,24 @@ class ModelRelease:
     # as much a part of the cutoff claim as the weights are.
     code_repository: str | None = None
     code_revision: str | None = None
+    # Where the dates come from. `hub` entries are re-derived from the Hugging
+    # Face API by `scripts/verify_model_releases.py`; `api` entries are hosted
+    # models with no weights to pin, whose dates are declared in that script
+    # against the provider's own announcement and whose `revision` is the dated
+    # model id the request actually names — `claude-3-5-sonnet-20241022`, not a
+    # commit. The distinction is recorded rather than hidden, because a
+    # declared date is weaker evidence than a fetched one and the writeup
+    # should be able to say which each model has.
+    origin: str = "hub"
+    # Which provider a hosted model is called through; `None` for hub models.
+    provider: str | None = None
+    # Registered *because* it postdates the cutoff: docs/spec.md allows one
+    # clearly-labelled appendix row on a current model, in the adjudication
+    # stage alone, to quantify what model progress adds to the same pipeline.
+    # Recorded here so that `--offline` and the verifier can tell an expected
+    # post-cutoff entry from a mistake; `stages.adjudicator.resolve` still reads
+    # the dates rather than this flag, because the dates are the claim.
+    appendix: bool = False
     notes: str = ""
 
 
@@ -170,5 +188,8 @@ def _entry(name: str, raw: dict[str, Any]) -> ModelRelease:
         trust_remote_code=raw.get("trust_remote_code", False),
         code_repository=raw.get("code_repository"),
         code_revision=raw.get("code_revision"),
+        origin=raw.get("origin", "hub"),
+        provider=raw.get("provider"),
+        appendix=raw.get("appendix", False),
         notes=raw.get("notes", ""),
     )

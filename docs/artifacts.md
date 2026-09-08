@@ -69,6 +69,16 @@ candidate — 535,400 of them at `input_k: 100` — so the confidence calibratio
 and the band tables read that file rather than paying for the pass again.
 `--refresh` recomputes it.
 
+The `adjudicated` stage holds the one artifact in this project that costs money
+rather than time: `responses.jsonl`, one line per record with the raw text the
+language model returned, keyed by every section including the model's pinned id,
+the prompt revision and every knob that changes a prompt. It is appended to as
+each response arrives rather than written at the end, so a run interrupted at
+record 900 of 1,070 keeps the 900 it has already paid for, and a re-score of a
+finished run bills nothing. `rejections.jsonl` sits beside it: one line per
+response that named a code it was not offered, with the reason, so a constraint
+violation leaves evidence rather than a silently unchanged ranking.
+
 Asking for a path creates nothing, so a cache miss stays a miss; only
 `prepare` writes. That asymmetry matters more than it looks: a `path()` that
 created its directory would make the next run see a hit for an artifact that
@@ -193,6 +203,7 @@ A rung of the experiment ladder is a committed YAML file in
 | `configs/rung1-rerank.yaml` | the same 8,000 | plus `bge-reranker-v2-m3` over the fused candidates |
 | `configs/rung1-rerank-base.yaml` | the same 8,000 | plus `bge-reranker-base` — the smaller screened reranker |
 | `configs/rung1-prior.yaml` | the same 8,000 | plus the 66-way classification-group prior |
+| `configs/rung1-adjudicate.yaml` | the same 8,000 | plus `claude-3-5-sonnet-20241022` over the least-confident fifth |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
 

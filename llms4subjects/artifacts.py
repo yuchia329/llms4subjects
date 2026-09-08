@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterator, MutableMapping, Sequence
 
 import numpy as np
 
@@ -293,3 +293,140 @@ def load_group_prior(store: ArtifactStore, config: ExperimentConfig):
             coefficients=arrays["coefficients"],
             intercepts=arrays["intercepts"],
         )
+
+
+ADJUDICATION_STAGE = "adjudicated"
+
+# One JSON object per line, appended: the run that wrote line 900 of a thousand
+# keeps 900 answers when it is interrupted, which a rewritten JSON file would
+# not. Both files are read back by later lines overriding earlier ones, so a
+# re-run that re-answers a record leaves a history rather than a conflict.
+RESPONSES_FILE = "responses.jsonl"
+REJECTIONS_FILE = "rejections.jsonl"
+
+
+class ResponseCache(MutableMapping[str, str]):
+    """The adjudicator's responses, written through as each one arrives.
+
+    A plain dict would lose an interrupted run's answers, and those were paid
+    for: the whole point of caching an LLM stage is that a response is bought
+    once. So every assignment appends a line before it returns, and the file is
+    the record of what has been billed for this configuration.
+
+    Keyed through the store on the whole pipeline configuration, which includes
+    the model, the prompt revision and every knob that changes a prompt — so a
+    reworded prompt is a new cache rather than the old answers under a new name.
+    """
+
+    def __init__(self, path: Path, prepare, responses: dict[str, str]):
+        self._path = path
+        self._prepare = prepare
+        self._responses = responses
+
+    def __getitem__(self, record_id: str) -> str:
+        return self._responses[record_id]
+
+    def __setitem__(self, record_id: str, response: str) -> None:
+        self._responses[record_id] = response
+        self._prepare()
+        with self._path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {"record_id": record_id, "response": response},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
+    def __delitem__(self, record_id: str) -> None:
+        # In memory only: the file is an append-only record of what was billed
+        # for, and deleting from it would lose that.
+        del self._responses[record_id]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._responses)
+
+    def __len__(self) -> int:
+        return len(self._responses)
+
+
+def load_responses(store: ArtifactStore, config: ExperimentConfig) -> ResponseCache:
+    """The responses already bought for this configuration, ready to be added to.
+
+    Read here rather than asked of the caller, for the reason the translation
+    cache and the group-prior head are: a harness that forgot it would re-bill
+    a whole routed subset to be told what it already knows.
+    """
+    path = store.path(ADJUDICATION_STAGE, config, RESPONSES_FILE)
+    return ResponseCache(
+        path,
+        lambda: store.prepare(ADJUDICATION_STAGE, config),
+        _read_jsonl_map(path, "record_id", "response"),
+    )
+
+
+def log_rejections(
+    store: ArtifactStore, config: ExperimentConfig, adjudications: Sequence
+) -> Path | None:
+    """Record every response that was refused, and why.
+
+    The constraint is only enforced if its violations are visible: a model that
+    invents identifiers has to leave evidence in the run's artifacts rather than
+    a silently unchanged ranking. Returns the file written, or `None` when there
+    was nothing new to write.
+
+    A violation already logged for this configuration is not written again. Most
+    of a second run's responses are replayed from the cache and bought nothing,
+    so appending them would make the violation count grow with re-scores rather
+    than with violations — and that count is the measurement the constraint is
+    reported by.
+    """
+    rejected = [result for result in adjudications if result.rejected]
+    if not rejected:
+        return None
+
+    logged = {
+        (entry["record_id"], entry["reason"]) for entry in read_rejections(store, config)
+    }
+    rejected = [
+        result
+        for result in rejected
+        if (result.record_id, result.reason) not in logged
+    ]
+    if not rejected:
+        return None
+
+    directory = store.prepare(ADJUDICATION_STAGE, config)
+    path = directory / REJECTIONS_FILE
+    with path.open("a", encoding="utf-8") as handle:
+        for result in rejected:
+            handle.write(
+                json.dumps(
+                    {"record_id": result.record_id, "reason": result.reason},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    return path
+
+
+def read_rejections(
+    store: ArtifactStore, config: ExperimentConfig
+) -> list[dict[str, str]]:
+    """The constraint violations logged for this configuration, newest last."""
+    path = store.path(ADJUDICATION_STAGE, config, REJECTIONS_FILE)
+    return _read_jsonl(path)
+
+
+def _read_jsonl(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _read_jsonl_map(path: Path, key: str, value: str) -> dict[str, str]:
+    return {entry[key]: entry[value] for entry in _read_jsonl(path)}
