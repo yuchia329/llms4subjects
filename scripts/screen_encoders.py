@@ -250,13 +250,20 @@ def screen(
 
     The encoder is loaded here rather than inside `retrieve` so that the load is
     timed apart from the pass and so that its size and dimensions — the other
-    half of a cost claim — come from the model that actually ran.
+    half of a cost claim — come from the model that actually ran. Which is also
+    why the config is pinned first: `retrieve` keys its vector cache on the
+    config it is handed, and exempts one whose encoder was supplied by the
+    caller, since that encoder may not be the model the config names. Here it
+    is exactly that model, so the pin has to be in the config for this pass to
+    share a cache entry with every other harness.
     """
+    config = encoders.pinned(config)
+
     with _artifact_root(artifacts, cold_timing) as root:
         store = ArtifactStore(root, data_revision=inputs.revision)
         # The same key `pipeline.retrieve` will compute, so the count below is
         # of the matrices this pass itself computes.
-        cached = store.directory(EMBEDDING_STAGE, encoders.pinned(config))
+        cached = store.directory(EMBEDDING_STAGE, config)
         before = _matrices(cached)
 
         started = time.perf_counter()

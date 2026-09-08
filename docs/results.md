@@ -1261,12 +1261,12 @@ ahead.
 
 ### Wall clock, and what these numbers are worth
 
-| encoder | parameters | load | stage one | total | matrices computed |
+| encoder | parameters | load | stage one | total | cache |
 |---|---:|---:|---:|---:|---|
-| `gte-multilingual-base` | 305M | 29.8s | 1732.4s | 1762.2s | 3 |
-| `bge-m3` | 568M | 11.8s | 6029.7s | 6041.5s | 3 |
-| `multilingual-e5-base` | 278M | 4.2s | 14.9s | 19.1s | 0, warm |
-| `multilingual-e5-large` | 560M | 8.2s | 1863.9s | 1872.1s | 3 |
+| `gte-multilingual-base` | 305M | 29.8s | 1732.4s | 1762.2s | computed 3 |
+| `bge-m3` | 568M | 11.8s | 6029.7s | 6041.5s | computed 3 |
+| `multilingual-e5-base` | 278M | 4.2s | 14.9s | 19.1s | warm |
+| `multilingual-e5-large` | 560M | 8.2s | 1863.9s | 1872.1s | computed 3 |
 
 A pass encodes three matrices — the 8,000 index documents, all 79,427 label
 texts, and the 5,354 dev records — and a warm one reads them back from disk,
@@ -1275,6 +1275,10 @@ screen counts what each pass actually computed rather than asking whether a
 cache directory exists, because a run that found one matrix and computed two
 paid nearly a cold run's price; `--cold` forces a throwaway artifact root when
 the seconds are the whole point.
+
+Re-run warm, both `gte-multilingual-base` and `multilingual-e5-base` score
+identically to four decimals in 14.3s and 15.3s, which is what the loop that
+runs hundreds of times actually costs once an encoder's vectors exist.
 
 **Read the three cold rows as approximate.** The laptop was running two
 concurrent reranker passes from ticket 12 for part of this screen, and swap
