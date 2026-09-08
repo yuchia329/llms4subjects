@@ -13,7 +13,9 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
+
+import numpy as np
 
 from .config import ExperimentConfig
 from .paths import ARTIFACT_DIR
@@ -39,6 +41,11 @@ FULL_PIPELINE = (
 # is invalidated by its own sections and by everything it consumes.
 STAGE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "label_text": ("label_text",),
+    # Vectors for one set of texts, keyed by the encoder alone, so that a
+    # second run over the same corpus reads them back instead of spending the
+    # encoder again — which is nearly all the wall clock of an ablation that
+    # changes anything downstream of it.
+    "embeddings": ("encoder",),
     "label_index": ("label_text", "encoder"),
     "document_index": ("encoder", "index"),
     "candidates": ("label_text", "encoder", "index", "retrievers", "fusion"),
@@ -130,3 +137,81 @@ class ArtifactStore:
             "data_revision": self.data_revision,
             "config": {name: config.section(name) for name in sections},
         }
+
+
+EMBEDDING_STAGE = "embeddings"
+
+# Length of the digest that stands for one set of input texts. Long enough that
+# two different corpora cannot collide, short enough to read in a directory.
+INPUT_REVISION_LENGTH = 16
+
+
+def input_revision(texts: Sequence[str]) -> str:
+    """A digest of exactly these texts, in this order: the cache's other half.
+
+    Changing a record's abstract, adding a document to the index, or reordering
+    the corpus all produce a different revision, so a cached matrix is served
+    only to the inputs that produced it.
+    """
+    digest = hashlib.sha256()
+    digest.update(str(len(texts)).encode())
+    for text in texts:
+        digest.update(b"\x00")
+        digest.update(text.encode())
+    return digest.hexdigest()[:INPUT_REVISION_LENGTH]
+
+
+class CachedEncoder:
+    """An encoder that computes each set of texts once, then reads them back.
+
+    Wrapping the encoder rather than caching at the index builder is what makes
+    the saving general: the index corpus, the records being predicted and the
+    label tower all go through the same door, so a second run over the same dev
+    split with the same encoder loads vectors instead of recomputing them —
+    which is most of the wall clock of an ablation that changes only fusion.
+
+    The key is the encoder configuration and the dataset revision, through the
+    store, plus a digest of the texts themselves. One file holds one whole
+    matrix, so the unit of reuse is the exact set of texts: a 32,043-document
+    index and an 8,000-document sample of it share nothing, because a per-text
+    cache of 32,043 files would cost more in stat calls than it saves.
+    """
+
+    def __init__(
+        self, encoder, store: "ArtifactStore", config: ExperimentConfig
+    ):
+        self._encoder = encoder
+        self._store = store
+        self._config = config
+
+    @property
+    def dimensions(self) -> int:
+        return self._encoder.dimensions
+
+    def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
+        return self._cached("documents", texts, self._encoder.encode_documents)
+
+    def encode_labels(self, texts: Sequence[str]) -> np.ndarray:
+        return self._cached("labels", texts, self._encoder.encode_labels)
+
+    def _cached(self, kind: str, texts: Sequence[str], compute) -> np.ndarray:
+        if not texts:
+            return compute(texts)
+
+        filename = f"{kind}-{input_revision(texts)}.npy"
+        path = self._store.path(EMBEDDING_STAGE, self._config, filename)
+        if path.exists():
+            return np.load(path)
+
+        vectors = compute(texts)
+        self._store.prepare(EMBEDDING_STAGE, self._config)
+        # Written aside and moved into place: a run interrupted mid-write would
+        # otherwise leave a truncated file that `exists` reports as a hit, and
+        # every later run would fail to read it rather than recompute it.
+        partial = path.with_name(path.name + ".partial")
+        # Through a handle, because `np.save` appends `.npy` to any filename
+        # that does not already end in it.
+        with partial.open("wb") as handle:
+            np.save(handle, vectors)
+        partial.replace(path)
+        return vectors

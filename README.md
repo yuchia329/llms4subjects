@@ -14,6 +14,7 @@ training, which no published system on this benchmark does.
 - [docs/spec.md](docs/spec.md) — what is being built and why, with the measured
   figures behind each decision
 - [docs/idea.md](docs/idea.md) — the earlier design, kept as the reasoning record
+- [docs/results.md](docs/results.md) — every experiment's dev numbers, appended as it lands
 - [docs/artifacts.md](docs/artifacts.md) — artifact cache, configs, and the two hosts
 - [legacy/README.md](legacy/README.md) — the contaminated dataset the earlier
   numbers were measured on
@@ -34,7 +35,7 @@ baseline/               the rejected classifier, kept runnable as a results row
 configs/                one committed YAML per rung of the experiment ladder
 reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
-scripts/                one-off analysis scripts, and the two freeze commands
+scripts/                run_experiment.py, the fixture and band freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -60,9 +61,17 @@ dataset is rebuilt there rather than copied, and how adapters come back.
 ## Running
 
 ```
-python -m llms4subjects configs/rung2.yaml   # resolve a config: keys, device, cache hits
-pytest                                       # contract and invariant tests
+python -m llms4subjects configs/rung2.yaml            # resolve a config: keys, device, cache hits
+python scripts/run_experiment.py configs/rung1-knn.yaml   # predict dev and score it
+pytest                                                # contract and invariant tests
 ```
+
+`run_experiment.py` is the harness every rung is measured through: it reads the
+dataset, calls `predict`, and scores the result with the shared evaluator, so a
+number in [docs/results.md](docs/results.md) comes from one code path however
+the model that produced it was built. `--limit N` shortens a run, `--submission
+DIR` also writes the organizers' tree, and `--split core_test` is refused —
+the gold test split is opened once, at the end of the project.
 
 ## Dataset
 
@@ -127,6 +136,51 @@ How much of the vocabulary each mode moves, from `qualifier_stats.json`:
 |---|---:|---:|---:|---:|---:|---:|
 | tib-core | 79,427 | 17,959 (22.6%) | 22,068 | 4,746 | 12,463 | 4,859 |
 | all | 204,739 | 61,557 (30.1%) | 77,583 | 24,772 | 40,600 | 12,211 |
+
+## Retrieval
+
+`llms4subjects.pipeline.predict` is the seam: records in, 50 ranked GND codes
+per record out, everything else reachable only through configuration.
+
+```python
+candidates = predict(records, config, vocabulary, index_records, store)
+```
+
+`records` and `index_records` are separate arguments, and that separation is the
+project's central anti-requirement made structural: nothing being predicted can
+contribute its own gold subjects to its own candidate set. A record that appears
+in the index is dropped from its own neighbourhood by id, and
+`tests/test_pipeline.py` perturbs every input record's gold labels and asserts
+the candidate sets do not move. The earlier `.train_knn_e5.py` draft built its
+label universe out of the evaluation split's own gold subjects; no number from
+that construction means anything.
+
+The retrievers are three, behind one interface:
+
+| retriever | mechanism | reaches |
+|---|---|---|
+| `knn` | subjects of the nearest indexed documents | labels some indexed record carries |
+| `dense` | the document scored against all 79,427 label vectors | any label, seen or not (ticket 05) |
+| `lexical` | label strings matched against the document text (ticket 06) | verbatim headings |
+
+A code's kNN score is the summed similarity of the neighbours carrying it, so
+two close documents agreeing on a subject outrank one document mentioning it.
+`neighbours` documents rarely carry 50 distinct subjects — 20 neighbours at 2.4
+subjects each is roughly 40 codes — so the scan continues past `neighbours` to
+fill the 50-slot contract, and everything it finds there is ranked below
+everything harvested. Otherwise a code seen twice at neighbours 30 and 40 could
+outrank one seen at neighbour 2, and `neighbours` would be a suggestion rather
+than a parameter.
+
+Predictions are restricted to the tib-core vocabulary whatever the index holds,
+which is what keeps a rung-3 all-subjects index from widening the label
+universe. Enabling a stage that is not built yet raises rather than being
+ignored, because a silently skipped reranker would be reported as an ablation
+that never ran.
+
+Encoding is the expensive part and it is cached by encoder plus a digest of the
+input texts, so the same dev split costs 106s once and 9s thereafter. See
+[docs/artifacts.md](docs/artifacts.md).
 
 ## Evaluation
 

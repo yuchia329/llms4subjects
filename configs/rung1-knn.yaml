@@ -1,0 +1,44 @@
+# Rung 1 with the neighbour retriever alone (ticket 04).
+#
+# The same index as configs/rung1.yaml — 8,000 documents stratified by record
+# type and language — with the dense and lexical retrievers off, so the number
+# it produces is the reimplementation of the mechanism the winning leaderboard
+# system used and nothing else. Ablations are new files rather than edits; this
+# one is the floor every later retriever is added on top of.
+name: rung1-knn-e5-base
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.0
+  dense:
+    enabled: false
+  lexical:
+    enabled: false
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Ticket 04's tracer bullet: records in, 50 ranked GND codes out, one dev score.
+  Reranking, the group prior and adjudication stay off, so retriever recall is
+  measured on its own.

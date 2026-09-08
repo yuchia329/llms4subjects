@@ -31,6 +31,28 @@ if not store.exists("document_index", config, "vectors.npy"):
     store.prepare("document_index", config)   # mkdir + manifest, for writers
 ```
 
+One stage of that table is not a stage of the pipeline but a cache of the most
+expensive thing in it. `embeddings` depends on the encoder section alone, and
+`ArtifactStore` is wrapped by `CachedEncoder`, which files one matrix per set of
+texts under a digest of those texts:
+
+```python
+from llms4subjects.artifacts import CachedEncoder
+
+encoder = CachedEncoder(encoder, store, config)   # same Encoder interface
+```
+
+Because the wrapper sits at the encoder rather than at the index builder, the
+index corpus, the records being predicted and the label tower all reach the same
+cache, and an ablation that changes anything downstream of the encoder re-encodes
+nothing at all: scoring dev costs 106s the first time and 9s after that.
+
+The digest is over the texts themselves, so adding a document to the index or
+editing an abstract produces a different file rather than a stale hit. One file
+holds one whole matrix, which makes the unit of reuse the exact set of texts: an
+8,000-document sample shares nothing with the 32,043-document index it was drawn
+from, because a per-text cache would spend more on stat calls than it saves.
+
 Asking for a path creates nothing, so a cache miss stays a miss; only
 `prepare` writes. That asymmetry matters more than it looks: a `path()` that
 created its directory would make the next run see a hit for an artifact that
@@ -71,6 +93,7 @@ A rung of the experiment ladder is a committed YAML file in
 | file | index | models |
 |---|---|---|
 | `configs/rung1.yaml` | 8,000 documents, stratified | off-the-shelf encoder |
+| `configs/rung1-knn.yaml` | the same 8,000 | the neighbour retriever alone |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
 
@@ -131,3 +154,30 @@ Bring training artifacts back the same way, into the gitignored artifact tree:
 Scoring then happens locally through the shared evaluator, so every number in
 the results table comes from one code path regardless of where the model was
 trained.
+
+The baseline re-run is the worked example of that split. On the host:
+
+    ssh nlp2 'cd ~/projects/llms4subjects && \
+      .venv/bin/python -u -m baseline.train --epochs 15 --device cuda \
+      > artifacts/baseline/mbert-dense/train.log 2>&1'
+
+It writes `artifacts/baseline/<run>/`, which is a plain run directory rather than
+a keyed artifact: it has no `ExperimentConfig` to fingerprint, since the rejected
+classifier is not a rung of the ladder.
+
+| file | what it is |
+|---|---|
+| `labels.json` | the output layer in column order — part of the checkpoint, not a derivation of it |
+| `checkpoint.pt` | the trained weights |
+| `run.json` | configuration, per-epoch losses, wall clock, device, host |
+| `predictions-<split>.json` | 50 ranked codes per record |
+| `train.log` | the run's console output |
+
+Then, locally:
+
+    rsync -az nlp2:~/projects/llms4subjects/artifacts/baseline/ artifacts/baseline/
+    python -m baseline.score artifacts/baseline/mbert-dense/predictions-core_dev.json --markdown
+
+Nothing on the host computes a metric. `--markdown` prints the rows that go into
+[docs/results.md](results.md), so the results document is a paste rather than a
+transcription.
