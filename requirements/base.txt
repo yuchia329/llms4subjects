@@ -24,6 +24,10 @@ scipy==1.14.1
 faiss-cpu==1.9.0.post1
 rank-bm25==0.2.2
 
+# Neither environment installs torch-geometric any more: the only importer was
+# the archived baseline's GCN label refiner, and ticket 14 excluded it (the
+# vocabulary has no hierarchy to convolve over).
+
 # Analysis and reporting
 matplotlib==3.9.3
 openpyxl==3.1.5

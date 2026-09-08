@@ -1,269 +1,124 @@
-"""The rejected classifier: mBERT with a dense output layer over the train labels.
+"""Re-run the rejected classifier on the clean splits (ticket 14).
 
-Archived, not developed. It is kept runnable because "a dense output layer
-cannot serve this problem" has to be a measured row in the results table rather
-than an assertion (ticket 14). Only the data paths, the device selection and
-the entrypoint changed when it moved here; the model is the original.
+Trains `bert-base-multilingual-cased` with a dense output layer over the 14,607
+`core_train` labels, validates on `core_dev`, and writes ranked predictions for
+scoring **locally** through `llms4subjects.stages.evaluator`:
 
-    python -m baseline.train --smoke                # first training step, laptop
-    python -m baseline.train --epochs 15            # the real run, on nlp2
+    python -m baseline.train --smoke                  # first training step, laptop
+    python -m baseline.train --epochs 15              # the real run, on nlp2
+    python -m baseline.train --predict-only ...        # more predictions, same checkpoint
+    python -m baseline.score artifacts/baseline/mbert-dense/predictions-core_dev.json
 
-The full label matrix is 32,043 records by 14,607 labels, which is a GPU-host
-workload; `--smoke` takes a prefix of the split so the training loop can be
-exercised locally on MPS.
+The full run is a GPU-host workload — 32,043 documents against a 14,607-way head
+— so it goes to `nlp2`, and `--smoke` takes a prefix of the split so the loop can
+be exercised on MPS first. Nothing here scores anything: predictions come back
+from the host as JSON and the numbers come from the shared evaluator, so the
+baseline row is produced by the same code path as every pipeline result.
+
+Written outputs, under `artifacts/baseline/<run>/`:
+
+| file | what it is |
+|---|---|
+| `labels.json` | the output layer in column order; part of the checkpoint |
+| `checkpoint.pt` | the trained weights (the original never saved any) |
+| `run.json` | configuration, per-epoch losses, wall clock, device |
+| `predictions-<split>.json` | 50 ranked codes per record |
+
+The gold test set stays closed: `--predict core_test` refuses to run without
+`--open-test-set`, which is ticket 17's to pass, once.
 """
 
+from __future__ import annotations
+
 import argparse
+import json
+import platform
 import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Sequence
 
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from scipy.sparse import csr_matrix
-from sentence_transformers import SentenceTransformer
-from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, Dataset
-from torch_geometric.nn import GCNConv
-from transformers import AutoModel, AutoTokenizer
+from torch.utils.data import DataLoader
 
-from baseline.data_handler import load_training_data_one_hot_labelsets
-from baseline.label_metadata import concat_subject_metadata, get_subject_metadata
+from llms4subjects.contracts import CODES_PER_RECORD, Code
+from llms4subjects.corpus import MissingDataset, load_split
 from llms4subjects.hardware import describe_device, select_device
+from llms4subjects.paths import ARTIFACT_DIR
 
-max_len = 256
-# model_name = "xlm-roberta-base"
-model_name = "bert-base-multilingual-cased"
-# --------------------------
-# 1. Custom Dataset
-# --------------------------
+from .classifier import (
+    MAX_LENGTH,
+    MODEL_NAME,
+    SubjectDataset,
+    build_model,
+    build_tokenizer,
+    rank,
+    train as train_model,
+)
+from .labels import load_labels, output_layer, save_labels, unreachable_assignments
 
+# docs/spec.md excludes reviving it, and `classifier.py` records what it did.
+GRAPH_EXCLUSION = (
+    "The GCN label-graph refiner is not revived. It modelled a hierarchy the "
+    "vocabulary does not contain (zero skos:broader triples), its edges came "
+    "from a mapping that collapsed each of 65 classification groups to one "
+    "label — 130 of 14,607 labels connected, the rest isolated — and its "
+    "output was a batch-constant vector that could only shift the head's bias."
+)
 
-class MultiLabelDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len):
-        self.texts = texts
-        self.labels = labels  # Sparse or dense matrix
-        self.tokenizer = tokenizer
-        self.max_len = max_len
+TEST_SPLIT = "core_test"
 
-    def __len__(self):
-        return self.labels.shape[0]
+# The splits a run may be asked to predict. `core_train` is absent on purpose:
+# ranking the split the head memorised measures memorisation, not the approach.
+PREDICTABLE = ("core_dev", TEST_SPLIT)
 
-    def __getitem__(self, idx):
-        text = self.texts[idx]
-        label = torch.tensor(
-            self.labels[idx].toarray().flatten(), dtype=torch.float32)
-        encoding = self.tokenizer(
-            text,
-            max_length=self.max_len,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        )
-        return {
-            "input_ids": encoding["input_ids"].squeeze(0),
-            "attention_mask": encoding["attention_mask"].squeeze(0),
-            "labels": label
-        }
+TEST_SET_CLOSED = (
+    f"{TEST_SPLIT} is the gold test set, opened once at the end of the project "
+    "(ticket 17). Pass --open-test-set only as part of that run."
+)
 
 
-# --------------------------
-# 2. Label Graph Refiner
-# --------------------------
-class LabelGraphRefiner(nn.Module):
-    def __init__(self, num_labels, label_features, edge_index):
-        super(LabelGraphRefiner, self).__init__()
-        self.label_embeddings = nn.Parameter(label_features)
-        self.conv1 = GCNConv(label_features.shape[1], 128)
-        self.conv2 = GCNConv(128, 64)
-        self.edge_index = edge_index  # Correct edge_index
+def training_summary(
+    *,
+    run: str,
+    device: str,
+    codes: Sequence[Code],
+    records: int,
+    args_dict: dict,
+    epochs: list[dict],
+    seconds: float,
+) -> dict:
+    """Everything needed to read the resulting row a year from now.
 
-    def forward(self):
-        x = F.relu(self.conv1(self.label_embeddings, self.edge_index))
-        x = self.conv2(x, self.edge_index)
-        return x
-
-
-# --------------------------
-# 3. Label-Aware Multi-Label Classifier
-# --------------------------
-class LabelAwareMultiLabelClassifier(nn.Module):
-    def __init__(self, text_model, num_labels, label_features=None, edges=None):
-        super(LabelAwareMultiLabelClassifier, self).__init__()
-        self.text_model = text_model  # Pretrained language model
-        self.label_graph_refiner = LabelGraphRefiner(
-            num_labels, label_features, edges)
-        self.classifier = nn.Linear(
-            text_model.config.hidden_size + 64,  # Include refined label embedding size
-            num_labels
-        )
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        # Refine label embeddings
-        refined_label_embeddings = self.label_graph_refiner()
-
-        # Get text embeddings from the pretrained model
-        text_outputs = self.text_model(
-            input_ids=input_ids, attention_mask=attention_mask)
-        # CLS token (batch_size, embedding_dim)
-        text_embeddings = text_outputs.last_hidden_state[:, 0]
-
-        # Expand refined label embeddings to match batch size
-        batch_size = text_embeddings.size(0)
-        expanded_label_embeddings = refined_label_embeddings.mean(
-            dim=0).unsqueeze(0).repeat(batch_size, 1)
-
-        # Combine text and label embeddings
-        combined_embeddings = torch.cat(
-            [text_embeddings, expanded_label_embeddings], dim=-1
-        )
-
-        # Classifier
-        logits = self.classifier(combined_embeddings)
-
-        loss = None
-        if labels is not None:
-            loss_fn = nn.BCEWithLogitsLoss()
-            loss = loss_fn(logits, labels)
-
-        return {"loss": loss, "logits": logits}
-
-
-# --------------------------
-# 4. Metrics
-# --------------------------
-def compute_metrics(logits, labels, k=5):
+    The ticket asks for the training configuration and its wall-clock cost, so
+    they are one JSON file written beside the checkpoint rather than a number
+    remembered from a terminal.
     """
-    Compute Precision@K, Recall@K, and F1@K for multi-label classification.
-
-    Args:
-        logits: numpy.ndarray of shape (num_samples, num_labels)
-            Predicted logits or probabilities for each label.
-        labels: numpy.ndarray of shape (num_samples, num_labels)
-            Ground truth binary label matrix.
-        k: int
-            Number of top predictions to consider for metrics.
-
-    Returns:
-        metrics: dict
-            Dictionary containing P@K, R@K, and F1@K scores.
-    """
-    # Sigmoid to convert logits to probabilities
-    probabilities = 1 / (1 + np.exp(-logits))
-
-    # Get the indices of the top K predictions for each record
-    top_k_indices = np.argsort(-probabilities, axis=1)[:, :k]
-
-    # Initialize counters
-    precision_scores = []
-    recall_scores = []
-
-    # Loop through each record
-    for i in range(labels.shape[0]):
-        true_labels = np.where(labels[i] == 1)[0]  # Indices of true labels
-        # Indices of top K predictions
-        predicted_top_k = top_k_indices[i]
-
-        # Calculate intersection
-        true_positives = len(set([int(label) for label in true_labels]) & set(
-            [label.item() for label in predicted_top_k]))
-
-        # Precision@K for this record
-        precision = true_positives / k
-        precision_scores.append(precision)
-
-        # Recall@K for this record
-        recall = true_positives / \
-            len(true_labels) if len(true_labels) > 0 else 0
-        recall_scores.append(recall)
-
-    # Average Precision@K and Recall@K across all records
-    avg_precision = np.mean(precision_scores)
-    avg_recall = np.mean(recall_scores)
-
-    # Compute F1@K
-    avg_f1 = (2 * avg_precision * avg_recall / (avg_precision + avg_recall)
-              if avg_precision + avg_recall > 0 else 0)
-
-    res = {
-        "Precision@K": avg_precision,
-        "Recall@K": avg_recall,
-        "F1@K": avg_f1
+    return {
+        "run": run,
+        "model": args_dict.get("model", MODEL_NAME),
+        "approach": "dense output layer over the core_train label set",
+        "device": device,
+        "host": platform.node(),
+        "labels": len(codes),
+        "records": records,
+        "config": {
+            "epochs": args_dict.get("epochs"),
+            "batch_size": args_dict.get("batch_size"),
+            "lr": args_dict.get("lr"),
+            "max_length": args_dict.get("max_length"),
+            "optimizer": "AdamW",
+            "loss": "BCEWithLogitsLoss",
+            "pooling": "CLS",
+        },
+        "epochs_log": epochs,
+        "seconds": seconds,
+        "finished": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "graph_component": {"revived": False, "reason": GRAPH_EXCLUSION},
     }
-    print(res)
-    # Return metrics
-    return res
-
-# --------------------------
-# 5. Training and Evaluation
-# --------------------------
 
 
-def train(model, train_loader, val_loader, optimizer, device, num_epoch):
-    for epoch in range(num_epoch):
-        model.train()
-        total_loss = 0
-        start = time.time()
-        for batch in train_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-
-            outputs = model(input_ids=input_ids,
-                            attention_mask=attention_mask, labels=labels)
-            loss = outputs["loss"]
-            total_loss += loss.item()
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        train_loss = total_loss / len(train_loader)
-        print(f"Epoch {
-              epoch + 1}: Avg Train Loss = {train_loss:.6f} Duration: {time.time()-start:.2f}")
-        model.eval()
-        total_loss = 0
-        start = time.time()
-        with torch.no_grad():
-            for batch in val_loader:
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
-
-                outputs = model(input_ids=input_ids,
-                                attention_mask=attention_mask, labels=labels)
-                loss = outputs["loss"]
-                total_loss += loss.item()
-                val_loss = total_loss / len(val_loader)
-            print(f"Epoch {
-                  epoch + 1}: Avg Vali Loss = {val_loss:.6f} Duration: {time.time()-start:.2f}")
-
-
-def evaluate(model, data_loader, device):
-    model.eval()
-    all_logits, all_labels = [], []
-    with torch.no_grad():
-        for batch in data_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs["logits"]
-
-            all_logits.append(logits.cpu())
-            all_labels.append(labels.cpu())
-    all_logits = torch.cat(all_logits, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
-    metrics_1 = compute_metrics(all_logits, all_labels, k=1)
-    metrics_2 = compute_metrics(all_logits, all_labels, k=3)
-    metrics_3 = compute_metrics(all_logits, all_labels, k=5)
-    return metrics_1, metrics_2, metrics_3
-
-
-# --------------------------
-# 6. Entrypoint
-# --------------------------
-def parse_args(argv=None):
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--smoke",
@@ -271,95 +126,218 @@ def parse_args(argv=None):
         help="train on a small prefix of the split, to reach the first "
         "training step on a laptop",
     )
-    parser.add_argument("--records", type=int, default=None,
-                        help="use only the first N training records")
+    parser.add_argument(
+        "--records", type=int, default=None, help="use only the first N training records"
+    )
+    parser.add_argument(
+        "--eval-records",
+        type=int,
+        default=None,
+        help="use only the first N records of every scored split, for smoke runs",
+    )
     parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--max-length", type=int, default=MAX_LENGTH)
+    parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--device", default="auto", help="auto, cuda, mps or cpu")
+    parser.add_argument("--run", default=None, help="name of the artifact directory")
+    parser.add_argument("--artifacts", default=str(ARTIFACT_DIR), help="artifact root")
+    parser.add_argument(
+        "--predict",
+        nargs="*",
+        default=["core_dev"],
+        help="splits to write ranked predictions for",
+    )
+    parser.add_argument(
+        "--predict-only",
+        action="store_true",
+        help="skip training: load the run directory's checkpoint and write "
+        "predictions from it",
+    )
+    parser.add_argument(
+        "--open-test-set",
+        action="store_true",
+        help=f"required to predict {TEST_SPLIT}; ticket 17 only",
+    )
     args = parser.parse_args(argv)
+    unknown = [split for split in args.predict if split not in PREDICTABLE]
+    if unknown:
+        # Checked before the epochs rather than after them: a typo that only
+        # surfaced in the prediction loop would discard a finished GPU run.
+        parser.error(
+            f"unknown --predict split(s): {', '.join(unknown)} "
+            f"(known: {', '.join(PREDICTABLE)})"
+        )
     if args.smoke:
         args.records = args.records or 256
+        args.eval_records = args.eval_records or 64
         args.epochs = 1
         args.batch_size = min(args.batch_size, 8)
+    if args.run is None:
+        args.run = "smoke" if args.smoke else "mbert-dense"
+    if TEST_SPLIT in args.predict and not args.open_test_set:
+        parser.error(TEST_SET_CLOSED)
     return args
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     device = torch.device(select_device(args.device))
     print(describe_device(str(device)))
 
-    df, unique_labels = load_training_data_one_hot_labelsets(records_size=args.records)
-    texts_train = df["input"]
-    labels = df.drop("input")
-    x_train, x_test, y_train, y_test = train_test_split(
-        texts_train, labels, test_size=0.3, random_state=42)
+    try:
+        train_records = load_split("core_train")
+        dev_records = load_split("core_dev")
+    except MissingDataset as error:
+        print(error)
+        return 1
+    if args.records is not None:
+        train_records = train_records[: args.records]
+    if args.eval_records is not None:
+        dev_records = dev_records[: args.eval_records]
 
-    x_val, x_test, y_val, y_test = train_test_split(
-        x_test, y_test, test_size=0.5, random_state=42)
+    codes = output_layer(train_records)
+    print(f"output layer: {len(codes)} labels over {len(train_records)} records")
 
-    labels_train = csr_matrix(y_train.to_numpy().tolist())
-    labels_val = csr_matrix(y_val.to_numpy().tolist())
-    labels_test = csr_matrix(y_test.to_numpy().tolist())
+    total, unreachable = unreachable_assignments(dev_records, codes)
+    # Named with the record count, because a `--smoke` prefix is a different
+    # measurement from the split's own ceiling and the two look alike printed.
+    print(
+        f"gold assignments this layer has no column for, over "
+        f"{len(dev_records)} core_dev records: {unreachable} of {total}"
+        + (f" ({unreachable / total:.1%})" if total else "")
+    )
 
-    # Tokenizer and dataset
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    train_dataset = MultiLabelDataset(x_train, labels_train, tokenizer, max_len)
-    val_dataset = MultiLabelDataset(x_val, labels_val, tokenizer, max_len)
-    test_dataset = MultiLabelDataset(x_test, labels_test, tokenizer, max_len)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    directory = Path(args.artifacts) / "baseline" / args.run
+    directory.mkdir(parents=True, exist_ok=True)
 
-    # Pretrained language model
-    text_model = AutoModel.from_pretrained(model_name)
+    if args.predict_only:
+        # Ticket 17 needs a test row from *this* checkpoint, and a second
+        # 1.25 h fine-tune would be a different model however identical the
+        # configuration. The saved layer is read rather than rebuilt, because
+        # it is the head's column order and not a derivation of the split.
+        codes = load_labels(directory / "labels.json")
+        print(f"loaded output layer: {len(codes)} labels from {directory}")
+    else:
+        save_labels(directory / "labels.json", codes)
 
-    # Generate label embeddings using SentenceTransformer
-    subject_metadata_mapping, label_hierarchy = get_subject_metadata(unique_labels)
-    label_descriptions = concat_subject_metadata(
-        list(subject_metadata_mapping.values()))
-    embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-    label_features = torch.tensor(embedding_model.encode(
-        label_descriptions), dtype=torch.float32).to(device)
+    tokenizer = build_tokenizer(args.model)
+    train_loader = dev_loader = None
+    if not args.predict_only:
+        train_loader = DataLoader(
+            SubjectDataset(train_records, codes, tokenizer, args.max_length),
+            batch_size=args.batch_size,
+            shuffle=True,
+        )
+        dev_loader = DataLoader(
+            SubjectDataset(dev_records, codes, tokenizer, args.max_length),
+            batch_size=args.batch_size,
+            shuffle=False,
+        )
 
-    # Should be (num_labels, embedding_dim)
-    print(f"Label embeddings shape: {label_features.shape}")
+    model = build_model(len(codes), args.model).to(device)
 
-    # Flatten labels into a list
-    flattened_list = []
-    for parent, children in label_hierarchy.items():
-        flattened_list.append(parent)
-        flattened_list.extend(children)
+    if args.predict_only:
+        checkpoint = directory / "checkpoint.pt"
+        if not checkpoint.exists():
+            print(f"{checkpoint} does not exist; there is nothing to predict from")
+            return 1
+        model.load_state_dict(torch.load(checkpoint, map_location=device))
+        print(f"loaded {checkpoint}")
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+        started = time.time()
+        history = train_model(
+            model, train_loader, dev_loader, optimizer, device, args.epochs
+        )
+        seconds = round(time.time() - started, 1)
+        print(f"trained {args.epochs} epoch(s) in {seconds:.1f}s on {device}")
 
-    # Map labels to indices
-    label_to_index = {label: idx for idx, label in enumerate(flattened_list)}
+        torch.save(model.state_dict(), directory / "checkpoint.pt")
+        summary = training_summary(
+            run=args.run,
+            device=str(device),
+            codes=codes,
+            records=len(train_records),
+            args_dict=vars(args),
+            epochs=history,
+            seconds=seconds,
+        )
+        (directory / "run.json").write_text(json.dumps(summary, indent=2))
 
-    # Define edges based on parent-child relationships
-    edges = []
-    for parent, children in label_hierarchy.items():
-        parent_idx = label_to_index[parent]
-        for child in children:
-            child_idx = label_to_index[child]
-            edges.append((parent_idx, child_idx))  # Parent -> Child
-            # Child -> Parent (bidirectional)
-            edges.append((child_idx, parent_idx))
+    for split in args.predict:
+        write_predictions(
+            split=split,
+            directory=directory,
+            run=args.run,
+            model=model,
+            codes=codes,
+            tokenizer=tokenizer,
+            device=device,
+            max_length=args.max_length,
+            batch_size=args.batch_size,
+            model_name=args.model,
+            allow_test=args.open_test_set,
+            limit=args.eval_records,
+        )
 
-    # Convert to PyTorch tensor and transpose
-    edges = torch.tensor(edges, dtype=torch.long).t()
+    print(f"wrote {directory}")
+    return 0
 
-    print(f"edge_index shape: {edges.shape}, dtype: {edges.dtype}")
 
-    self_loops = torch.arange(len(label_to_index), dtype=torch.long).repeat(2, 1)
-    edges = torch.cat([edges, self_loops], dim=1).to(device)
-
-    # Initialize model with embeddings
-    model = LabelAwareMultiLabelClassifier(
-        text_model, len(label_descriptions), label_features, edges).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
-    train(model=model, train_loader=train_loader, val_loader=val_loader,
-          optimizer=optimizer, device=device, num_epoch=args.epochs)
-    return evaluate(model=model, data_loader=test_loader, device=device)
+def write_predictions(
+    *,
+    split: str,
+    directory: Path,
+    run: str,
+    model,
+    codes: Sequence[Code],
+    tokenizer,
+    device,
+    max_length: int,
+    batch_size: int,
+    model_name: str = MODEL_NAME,
+    allow_test: bool = False,
+    limit: int | None = None,
+) -> Path:
+    """50 ranked codes per record of `split`, as JSON for local scoring."""
+    if split == TEST_SPLIT and not allow_test:
+        # Checked at parse time and again here, so a programmatic caller cannot
+        # reach the gold test set by passing the split name alone.
+        raise PermissionError(TEST_SET_CLOSED)
+    records = load_split(split)
+    if limit is not None:
+        records = records[:limit]
+    loader = DataLoader(
+        SubjectDataset(records, codes, tokenizer, max_length),
+        batch_size=batch_size,
+        shuffle=False,
+    )
+    rankings = rank(
+        model, loader, codes, device, [record.id for record in records], CODES_PER_RECORD
+    )
+    path = directory / f"predictions-{split}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "run": run,
+                "split": split,
+                "model": model_name,
+                "labels": len(codes),
+                # What the rankings actually hold, which is `k` unless the layer
+                # is smaller than it — as it is on a `--smoke` run.
+                "codes_per_record": min(CODES_PER_RECORD, len(codes)),
+                "predictions": {
+                    record_id: list(ranking) for record_id, ranking in rankings.items()
+                },
+            },
+            indent=0,
+        )
+    )
+    print(f"wrote {path} ({len(rankings)} records)")
+    return path
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

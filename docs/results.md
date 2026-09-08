@@ -3,8 +3,10 @@
 One row per experiment, appended as it completes, so the writeup is a byproduct
 of the work rather than a reconstruction from memory (docs/spec.md, story 57).
 
-Every number here comes from `scripts/run_experiment.py`, which scores through
-`llms4subjects.stages.evaluator`; the command that produced a row is quoted with
+Every number here comes from `scripts/run_experiment.py` — or, for the rejected
+baseline, from `python -m baseline.score` — both of which score through
+`llms4subjects.stages.evaluator` with the bands frozen in
+`reference/frequency_bands.json`; the command that produced a row is quoted with
 it. **Model selection is micro Recall@10 on dev**, and the official
 macro-over-cells figure is reported beside it because that is what the
 leaderboard is quoted on. All numbers below are **dev**: the gold test split is
@@ -17,6 +19,7 @@ opened once, at the end of the project (ticket 17).
 | `rung1-knn` | 8,000 stratified | kNN only | **0.3023** | 0.3948 | 0.4495 |
 | `rung1-dense` | none read | dense label tower only | **0.1224** | 0.1260 | 0.2110 |
 | `rung1-lexical` | none read | lexical label matching only | **0.1558** | 0.1416 | 0.2532 |
+| `baseline` (rejected) | — | none: a 14,607-way dense classifier | **0.0667** | 0.1623 | 0.1518 |
 
 The three rung-1 rows are not competing. They are three mechanisms reaching
 different parts of the vocabulary — kNN takes the head at 0.69 and the zero-shot
@@ -327,3 +330,118 @@ a heading is present, and the recall figures above are what that is worth. And
 no stemming or decompounding is applied, so `Polymerisationsgrad` in a title
 does not reach the label `Polymerisation`. German compounds are exactly where
 that loss lands, which makes the measured gap a floor rather than a ceiling.
+
+## baseline — the classifier this project rejects
+
+    ssh nlp2 'cd ~/projects/llms4subjects && .venv/bin/python -u -m baseline.train --epochs 15 --device cuda'
+    rsync -az nlp2:~/projects/llms4subjects/artifacts/baseline/ artifacts/baseline/
+    python -m baseline.score artifacts/baseline/mbert-dense/predictions-core_dev.json --markdown
+
+`bert-base-multilingual-cased`, CLS pooling, one dense layer over the 14,607
+labels that occur in `core_train`, `BCEWithLogitsLoss`, AdamW at 2e-5, 15 epochs,
+batch 64, 256 tokens. **1.25 h wall clock on one A100 80GB** (`nlp2`), 300 s per
+epoch. Trained on `core_train`, validated on `core_dev`, dev loss falling
+monotonically to 0.00133; predictions pulled back and scored here, never on the
+host. Configuration and per-epoch cost are in `artifacts/baseline/mbert-dense/run.json`.
+
+This is the reference point rather than a rung: it is the approach docs/spec.md
+rejects, re-run on the clean splits so the rejection is a measurement. The
+project's earlier numbers for it were taken on the contaminated split described
+in [legacy/README.md](../legacy/README.md) — 189 dev records shared with train,
+142 eventual gold-test records inside train — and this row replaces them.
+
+|  | R@5 | R@10 | R@25 | R@50 |
+|---|---:|---:|---:|---:|
+| micro | 0.0472 | 0.0667 | 0.1057 | 0.1518 |
+| official macro-over-cells | 0.1423 | 0.1623 | 0.1925 | 0.2454 |
+
+Precision, at 2.44 gold labels per dev record: micro P@5 0.0230, P@10 0.0163.
+
+### By frequency band (micro recall, gold assignments in brackets)
+
+| band | R@5 | R@10 | R@25 | R@50 |
+|---|---:|---:|---:|---:|
+| head (2,025) | 0.3047 | 0.4311 | 0.6726 | 0.9353 |
+| torso (5,766) | 0.0000 | 0.0000 | 0.0036 | 0.0160 |
+| tail (4,177) | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| zero (1,117) | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+
+The zero row is not a weak number, it is a structural one, and it is the whole
+argument of the project stated as a measurement. The head has one column per
+label seen in `core_train`, so a label that never occurs there cannot be emitted
+at any score, at any k, after any amount of training.
+`tests/test_baseline_classifier.py` asserts it with *random* scores, because no
+training run can change it. On dev that is 1,117 of 13,085 gold assignments
+(8.5%) and 1,053 of 5,563 distinct gold labels (18.9%) — matching the test-side
+19.1% docs/spec.md quotes.
+
+The two rows above it were not predicted in advance and are the more damaging
+finding: **torso and tail recall are zero too**, out to k=50, and they carry 76%
+of dev's gold assignments between them. A 14,607-way sigmoid head trained with
+BCE on 78,037 assignments sees each torso label in 10–100 documents and each tail
+label in 1–9, against a per-column negative rate above 99.98%, and collapses onto
+the frequent columns:
+
+| | |
+|---|---:|
+| distinct codes emitted anywhere in 5,354 x 50 slots | 78 of 14,607 |
+| distinct codes emitted in any top-10 | 26 |
+| top-50 slots occupied by head-band labels | 97.4% |
+| top-50 slots occupied by torso-band labels | 2.6% |
+
+So the classifier does not so much rank the vocabulary as memorise its 26 most
+common headings. Its head-band R@50 of 0.9353 is the same fact from the other
+side: where it has hundreds of examples per column it is genuinely strong, and
+that is 16% of the assignments.
+
+Against the retrieval mechanisms measured above, at micro R@10: kNN alone
+reaches 0.3023, the label tower 0.1224, lexical matching 0.1558, the classifier
+0.0667 — after 1.25 h of A100 time against their 8.8 s of retrieval. The gap is
+widest exactly where the benchmark's mass is, and the zero column is unreachable
+for it by construction, which is why the pipeline is retrieval over a label
+vocabulary rather than classification into a label set.
+
+### Where the official figure comes from
+
+Three of 22 dev cells carry 55.3% of the official recall figure, and two of them
+hold one record each:
+
+| cell | records | share of records | share of the figure |
+|---|---:|---:|---:|
+| Book / ca | 1 | 0.02% | 23.42% |
+| Book / ja | 1 | 0.02% | 23.42% |
+| Book / it | 3 | 0.06% | 8.50% |
+
+The official R@10 (0.1623) therefore sits 0.096 above the micro one (0.0667) —
+a larger gap than any retrieval row shows, because a model that only ever emits
+common headings does well precisely on the tiny cells whose few records carry
+common headings. Read on the official aggregation alone, the rejected approach
+looks half as bad as it is.
+
+### The graph component, excluded
+
+docs/spec.md excludes reviving the GCN label-graph refiner: it modelled a
+hierarchy the vocabulary does not contain, since the release has zero
+`skos:broader` triples. Re-reading the original code added two reasons of its
+own. Its edges came from a mapping keyed by classification name but tested by
+label, so each group was overwritten down to a single label: 65 classification
+names produced 65 two-node components covering 130 of the 14,607 labels, and the
+other 14,477 had no edge at all. And its output reached the classifier as the mean over all
+label embeddings, repeated across the batch — a batch-constant vector that could
+only shift the head's bias, whatever the graph had contained. Reviving it would
+have meant designing a new component, not re-running an old one.
+
+`baseline/__init__.py` lists every defect found in the original code and what was
+done about each. Three mattered for the measurement: the output layer's column
+order came from iterating a `set`, the original resplit `core_train` three ways
+and scored against a slice of itself, and its evaluation script ranked 768-wide
+CLS embeddings as though they were label scores. Numbers from that path would not
+have been comparable to any row here.
+
+### Test
+
+Not measured. The gold test set is opened once, in ticket 17, and this row is a
+dev row like every other row in this document. The prediction path exists and is
+gated: `python -m baseline.train --predict core_test` refuses to run without
+`--open-test-set`, so producing the test row later is a flag rather than a
+change to the code that produced this one.

@@ -9,7 +9,3 @@
 -r base.txt
 
 torch==2.5.1
-
-# Only the archived baseline in baseline/ imports this; the current pipeline
-# does not, because the vocabulary has no hierarchy to convolve over.
-torch-geometric==2.6.1

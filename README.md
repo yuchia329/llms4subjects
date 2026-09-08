@@ -256,14 +256,32 @@ locally.
 dense output layer over the 14,607 training labels. It is archived, not
 developed — it stays runnable only so that "a dense output layer cannot serve
 this problem" is a measured row in the results table rather than an assertion.
+That row is in [docs/results.md](docs/results.md), and it is the reference point
+every pipeline row is read against.
 
 ```
 python -m baseline.train --smoke      # first training step on a laptop (MPS)
 python -m baseline.train --epochs 15  # the real run, on the GPU host
+python -m baseline.score artifacts/baseline/mbert-dense/predictions-core_dev.json
 ```
 
+Training and scoring are deliberately separate commands on separate machines.
 The full label matrix is 32,043 records by 14,607 labels, which is a GPU-host
-workload; `--smoke` takes a prefix of the split so the training loop can be
-exercised locally. The graph component in `baseline/train.py` is not revived by
-the current design: it modelled a hierarchy the vocabulary does not contain
-(zero `skos:broader` triples exist).
+workload, so the run happens on `nlp2` and writes a checkpoint, a `run.json`
+recording its configuration and wall clock, and ranked predictions; those come
+back and are scored here, through the same evaluator and the same frozen bands
+as every pipeline result. `--smoke` takes a prefix of the split so the training
+loop can be exercised locally first.
+
+The zero-shot band recall is exactly zero, and structurally so: the head has one
+column per label seen in `core_train`, so a label that never occurs there cannot
+be emitted at any score. `tests/test_baseline_classifier.py` asserts that with
+random scores, which is the point — no training run can change it.
+
+The graph component of the original is not revived: it modelled a hierarchy the
+vocabulary does not contain (zero `skos:broader` triples exist), its edges came
+from a mapping that put every label in a group of one, and its output was a
+batch-constant vector that could only shift the head's bias.
+`baseline/__init__.py` lists every defect found in the original code and what
+was done about each, since a measurement taken through a broken metric would
+not have been a measurement of the approach.
