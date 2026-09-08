@@ -24,6 +24,10 @@ opened once, at the end of the project (ticket 17).
 | `rung1-gte-base` ‡ | 8,000 stratified | all three, RRF | **0.4724** | 0.6107 | 0.6481 |
 | `rung1-bge-m3` ‡ | 8,000 stratified | all three, RRF | **0.4702** | 0.5981 | 0.6378 |
 | `rung1-e5-large` ‡ | 8,000 stratified | all three, RRF | **0.4063** | 0.5500 | 0.5748 |
+| `rung2-bge-m3` § | 32,043 — the whole split | all three, RRF | **0.5337** | 0.6367 | 0.7352 |
+| `rung2-gte-base` § | 32,043 — the whole split | all three, RRF | **0.5298** | 0.6291 | 0.7395 |
+| `rung2-e5-base` § | 32,043 — the whole split | all three, RRF | **0.4961** | 0.6295 | 0.6839 |
+| `rung2-e5-large` § | 32,043 — the whole split | all three, RRF | **0.4926** | 0.6251 | 0.6896 |
 | `baseline` (rejected) | — | none: a 14,607-way dense classifier | **0.0667** | 0.1623 | 0.1518 |
 
 † `rung1-prior` was measured against the *bilingual* label text, which moved
@@ -43,8 +47,15 @@ screened" below.
 
 ‡ The three screened encoders (ticket 09), each one flag from `configs/rung1.yaml`
 and all bilingual, so the row they are read against is `rung1`'s bilingual 0.4149
-rather than the German-only 0.3964 above. `gte-multilingual-base` is the encoder
-rungs 2 and 3 carry forward.
+rather than the German-only 0.3964 above. `gte-multilingual-base` leads at this
+index by 0.0022 over `bge-m3`; rung 2 re-measures all four at the full index and
+the top two swap.
+
+§ The same four encoders at the full 32,043-document index (ticket 10), each file
+one flag from its rung-1 counterpart, so the pair of rows for one encoder differs
+in index size and nothing else. `bge-m3` and `gte-multilingual-base` are the two
+carried to rung 3, in that order, on margins of 0.0039 over each other and 0.0336
+over the third.
 
 The three rung-1 rows are not competing. They are three mechanisms reaching
 different parts of the vocabulary — kNN takes the head at 0.69 and the zero-shot
@@ -1502,3 +1513,196 @@ current model declared in `scripts/verify_model_releases.py`'s `API_MODELS` with
 cutoff does not cover. Nothing else changes. Until those run, the honest summary of this stage is the ceiling above:
 **at most +0.046 micro R@10 for roughly 2.1M input tokens**, and no measured
 figure yet.
+
+## rung 2 — the same four encoders at the full index, and the ranking did not hold
+
+    python scripts/screen_encoders.py configs/rung2.yaml \
+        configs/rung2-e5-large.yaml configs/rung2-bge-m3.yaml \
+        configs/rung2-gte-base.yaml --json reference/screens/rung2.json
+    python scripts/compare_rungs.py \
+        reference/screens/rung1.json reference/screens/rung2.json
+
+The question this rung exists to answer is about the *method*, not the models:
+rung 1 screened four encoders at 8,000 documents and shortlisted two, and that
+shortlist is only worth something if the ranking survives the index it was
+measured at. So the index grows fourfold to the whole official tib-core train
+split — 32,043 documents — and **nothing else moves**. Each rung-2 config is its
+rung-1 counterpart with `index.size: null` — and `index.stratify: false`, which
+is inert once there is no sample to draw — and no other edit, fusion weights
+included, even though those were tuned for `multilingual-e5-base`; retuning here
+would have put a tuning change inside a scaling measurement.
+`scripts/compare_rungs.py` refuses a pair of screens that disagree on any
+section but `index`, so the rule is enforced rather than remembered.
+
+| encoder | dim | R@5 | R@10 | R@50 | R@100 | official R@10 |
+|---|---:|---:|---:|---:|---:|---:|
+| **`bge-m3`** | 1024 | 0.4219 | **0.5337** | 0.7352 | 0.7878 | 0.6367 |
+| `gte-multilingual-base` | 768 | 0.4076 | **0.5298** | 0.7395 | 0.7939 | 0.6291 |
+| `multilingual-e5-base` | 768 | 0.3769 | **0.4961** | 0.6839 | 0.7440 | 0.6295 |
+| `multilingual-e5-large` | 1024 | 0.3716 | **0.4926** | 0.6896 | 0.7508 | 0.6251 |
+
+### The ranking flipped, and the honest reading of that
+
+| encoder | 8,000 | 32,043 | rank @ 8,000 | rank @ 32,043 | Δ |
+|---|---:|---:|---:|---:|---:|
+| `bge-m3` | 0.4702 | 0.5337 | 2 | **1** | +0.0635 |
+| `gte-multilingual-base` | 0.4724 | 0.5298 | 1 | **2** | +0.0573 |
+| `multilingual-e5-base` | 0.4149 | 0.4961 | 3 | 3 | +0.0812 |
+| `multilingual-e5-large` | 0.4063 | 0.4926 | 4 | 4 | +0.0863 |
+
+**The ranking did not hold.** `bge-m3` and `gte-multilingual-base` swap the top
+two places, which is one adjacent transposition of four: Spearman ρ 0.800,
+Kendall τ-b 0.667. The E5 pair keeps its order, including the result rung 1 was
+built to check — the larger checkpoint is still the worse retriever, though the
+gap closes from 0.0086 to 0.0035.
+
+The reading that survives scrutiny is narrower than "screening failed". The two
+encoders that swapped are **0.0022 apart at rung 1 and 0.0039 apart at rung 2**,
+against a table spread of 0.0411, and they swap in opposite directions: the pair
+is effectively tied at both index sizes, and the *order within it* is not a
+measurement this project can claim. What the cheap screen got right is the
+**membership** of the shortlist — the same two encoders lead at both index sizes,
+by margins of 0.0336 and larger over the third — and what it got wrong is which
+of the two is first. A project that had shortlisted one encoder on the rung-1
+screen would have taken the wrong one, by 0.0039. That is the argument for
+carrying two forward (docs/spec.md, story 41), now measured rather than assumed.
+
+`gte-multilingual-base` also *leads* at the candidate ceiling — 0.7939 against
+0.7878 at R@100, and 0.7395 against 0.7352 at R@50 — while losing at R@10. So
+the two are separated less by retrieval quality than by ordering within the top
+ten, and since candidate generation feeds a cross-encoder that reads 100
+candidates, `gte`'s pool is the better input to the stage that follows. Neither
+encoder dominates, and both go to rung 3.
+
+### Only the neighbour retriever moved, which is the control
+
+| encoder | index | dense | knn | lexical | fused |
+|---|---:|---:|---:|---:|---:|
+| `bge-m3` | 8,000 | 0.2375 | 0.3473 | 0.1781 | 0.4702 |
+| `bge-m3` | 32,043 | 0.2375 | 0.4667 | 0.1781 | 0.5337 |
+| `gte-multilingual-base` | 8,000 | 0.1999 | 0.3695 | 0.1781 | 0.4724 |
+| `gte-multilingual-base` | 32,043 | 0.1999 | 0.4867 | 0.1781 | 0.5298 |
+| `multilingual-e5-base` | 8,000 | 0.1149 | 0.3023 | 0.1781 | 0.4149 |
+| `multilingual-e5-base` | 32,043 | 0.1149 | 0.4255 | 0.1781 | 0.4961 |
+| `multilingual-e5-large` | 8,000 | 0.0852 | 0.3193 | 0.1781 | 0.4063 |
+| `multilingual-e5-large` | 32,043 | 0.0852 | 0.4479 | 0.1781 | 0.4926 |
+
+The dense and lexical columns are **identical to four decimals at both index
+sizes**, for all four encoders, and they have to be: the dense retriever scores
+the 79,427-entry label tower and BM25 reads the labels' own strings, so neither
+reads an indexed document. That makes them the control on the whole comparison,
+the same role the lexical column played inside the rung-1 screen, and it
+localises every difference above to the one retriever that grew — kNN, up
+between +0.1172 and +0.1286.
+
+It also says where the flip comes from. `gte` keeps the stronger neighbour
+retriever at the full index (0.4867 against 0.4667) and `bge-m3` keeps the
+stronger label tower (0.2375 against 0.1999), exactly as at rung 1. What changed
+is the value of the tower *given* a strong neighbour list: with four times as
+many documents to draw its twenty neighbours from, the labels kNN still misses
+are increasingly ones only the tower reaches, so the encoder with the better
+tower gains more from fusion than its own kNN column suggests. The flip is a fusion effect, not a reversal in either tower.
+
+### The encoders converge as the index grows
+
+The spread between best and worst falls from 0.0661 to 0.0411 — a third of the
+encoder gap closed by index size alone — and the ordering of the *gains* is the
+reverse of the ordering of the scores: the two weakest encoders gained most
+(+0.0812 and +0.0863) and the two strongest least (+0.0635 and +0.0573).
+
+Index size partially substitutes for encoder quality, which is a caution in two
+directions. A screen at a small index **exaggerates** the difference between
+encoders, so the 8,000-document figures are the wrong basis for a claim about how
+much the encoder is worth; and rung 3 grows the index again, to 70,588
+all-subjects documents, so some part of whatever fine-tuning appears to buy will
+be the index rather than the training. That is separable only because index size
+and training-set size are separate knobs here (docs/spec.md, story 20), and it is
+why rung 3 has to report a fine-tuned and an off-the-shelf row at the *same*
+index.
+
+### Where the score comes from: the tail, at the zero-shot band's expense
+
+| encoder | index | head | torso | tail | zero |
+|---|---:|---:|---:|---:|---:|
+| `bge-m3` | 8,000 | 0.6874 | 0.5338 | 0.3361 | 0.2498 |
+| `bge-m3` | 32,043 | 0.6958 | 0.5879 | **0.4601** | 0.2355 |
+| `gte-multilingual-base` | 8,000 | 0.6914 | 0.5437 | 0.3311 | 0.2363 |
+| `gte-multilingual-base` | 32,043 | 0.6795 | 0.5888 | 0.4582 | 0.2211 |
+| `multilingual-e5-base` | 8,000 | 0.7022 | 0.4610 | 0.2612 | 0.2310 |
+| `multilingual-e5-base` | 32,043 | 0.7338 | 0.5482 | 0.3814 | 0.2256 |
+| `multilingual-e5-large` | 8,000 | 0.7116 | 0.4646 | 0.2387 | 0.1791 |
+| `multilingual-e5-large` | 32,043 | 0.7358 | 0.5550 | 0.3747 | 0.1710 |
+
+**A fourfold index buys the tail**: +0.1240 for `bge-m3`, +0.1271 for `gte`,
++0.1202 and +0.1360 for the E5 pair, against +0.0084 and −0.0119 on the head for
+the top two. That is the
+same shape the encoder choice had at rung 1 and for the same reason — the head is
+already near its ceiling whatever the pipeline does, and the 4,132 torso and tail
+labels carry 75.2% of assignments.
+
+**The zero-shot band goes down**, for every encoder, by 0.0054 to 0.0152. It is
+displacement rather than loss, and the candidate ceiling proves it: zero-shot
+recall at 100 is *unchanged to four decimals* for three of the four encoders —
+0.5184 for `bge-m3`, 0.4942 for `gte`, 0.4584 for `multilingual-e5-base` — and
+moves by 0.0009 for `multilingual-e5-large` (0.4288 to 0.4297), the one encoder
+whose kNN list is reordered enough to push a stray zero-shot label into the 100.
+A zero-shot label
+appears on no training record by definition, so it appears on no indexed document
+either and kNN can never propose one; growing the index adds nothing to that band
+and merely lets kNN's candidates outrank the tower's in the fused top ten. Every
+zero-shot label the pipeline could reach at rung 1 is still in the 100 at rung 2,
+which is exactly the situation the reranker and the adjudicator exist for — and a
+reason to read their zero-shot rows at this index rather than at rung 1's.
+
+### The official aggregation barely separates these four
+
+Micro spreads the four encoders over 0.0411 at the full index; the official
+macro-over-cells figure spreads them over 0.0116, and it ranks them differently:
+`bge-m3` 0.6367, then **`multilingual-e5-base` 0.6295** and `gte` 0.6291, then
+`multilingual-e5-large` 0.6251. Model selection is micro R@10 throughout this
+project (docs/spec.md, story 4) and the shortlist is unaffected — the two
+encoders it names lead on micro by 0.0336 — but the number the leaderboard is
+read on would call this a four-way tie. One vote per `<record type> × language`
+cell is what does it: the encoders differ most on the tail, and the cells the
+official average weights up are small ones whose labels are not tail-heavy.
+
+### What the rung cost
+
+| encoder | index pass | what it computed |
+|---|---:|---|
+| `bge-m3` | 2211.6s | the 32,043-document index |
+| `multilingual-e5-large` | 1760.0s | the 32,043-document index |
+| `gte-multilingual-base` | 1069.1s | the 32,043-document index |
+| `multilingual-e5-base` | 28.7s | nothing — warm |
+
+One matrix per encoder, not three: the label tower and the dev split were already
+cached from rung 1, and `multilingual-e5-base`'s full-index vectors were on disk
+too, from an earlier full-index pass on 2026-09-07, which is why its row is warm
+at 28.7s. So the whole rung cost about 85 minutes of M4 Pro, on MPS, with no CUDA
+and nothing trained — the ladder's cheap rung is cheap because the expensive half
+of every pass is the 79,427-label tower, and that is encoder-keyed and shared.
+
+The committed screens are the warm re-run, so their own cost column reads `warm`
+throughout; the figures above are the cold index passes from the first run.
+
+### What this decides
+
+- **Rung 3 fine-tunes `bge-m3` and `gte-multilingual-base`** — the same two
+  rung 1 named, now chosen at the index size the decision is made at, and in
+  neither case on a margin worth defending against the other.
+- **Cheap screening generalises for membership, not for order.** The 8,000-
+  document screen picked the right pair and the wrong winner. Reported as a
+  finding rather than as a vindication, because the ladder was designed on the
+  assumption that the ranking would survive and it did not.
+- **The fusion weights are still `multilingual-e5-base`'s**, held fixed across
+  both rungs on purpose. Both shortlisted encoders have a label tower roughly
+  twice as strong as the encoder those weights were tuned for, so 0.5337 is a
+  floor; retuning is rung 3's first step.
+- **The off-the-shelf pipeline is at 0.5337 dev micro R@10 and 0.6367 official
+  R@10**, no GPU spent and no model trained. That is what fine-tuning has to
+  beat, and it is +0.0613 on the rung-1 figure for a change of index size alone.
+- Both screens are committed — [reference/screens/rung1.json](../reference/screens/rung1.json)
+  and [rung2.json](../reference/screens/rung2.json) — so the comparison is
+  re-derivable in milliseconds rather than in four hours, and
+  `tests/test_compare_rungs.py` fails if a later config edit makes them
+  incomparable.

@@ -91,13 +91,21 @@ To see what a run will read and write before it starts:
 ## Frozen reference artifacts
 
 `reference/` is the opposite of `artifacts/`: small, tracked, and never written
-as a side effect of a run. It holds three files:
+as a side effect of a run. It holds:
 
 | file | what it is | written by |
 |---|---|---|
 | `frequency_bands.json` | the label frequency band assignment, frozen against tib-core train counts | `scripts/freeze_bands.py --force` |
 | `label_translations.json` | English for all 79,224 distinct German label strings | `scripts/translate_labels.py` |
 | `model_releases.json` | every model the project loads, its release date and the revision it is pinned to | `scripts/verify_model_releases.py --force` |
+| `screens/rung1.json`, `screens/rung2.json` | four encoders' scores, bands and wall clock at each index size | `scripts/screen_encoders.py --json` |
+
+The screens are here rather than under `artifacts/` because they are read by a
+*later* run: `scripts/compare_rungs.py` answers whether the encoder ranking
+survived the index growing fourfold, and that answer has to be re-derivable
+from a clean checkout in milliseconds rather than from four hours of Apple
+Silicon. Each one is a measurement, so nothing but a re-run rewrites it, and a
+re-run that changes a number is a finding rather than a refresh.
 
 The distinction is the point. A cached artifact is a saved computation and can
 be deleted at any time; a frozen reference is a *decision*, and recomputing it
@@ -204,8 +212,20 @@ A rung of the experiment ladder is a committed YAML file in
 | `configs/rung1-rerank-base.yaml` | the same 8,000 | plus `bge-reranker-base` — the smaller screened reranker |
 | `configs/rung1-prior.yaml` | the same 8,000 | plus the 66-way classification-group prior |
 | `configs/rung1-adjudicate.yaml` | the same 8,000 | plus `claude-3-5-sonnet-20241022` over the least-confident fifth |
-| `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
+| `configs/rung2.yaml` | 32,043 documents — the whole tib-core train split | `multilingual-e5-base`, off the shelf |
+| `configs/rung2-e5-large.yaml` | the same 32,043 | `multilingual-e5-large` — the same screen, one rung up |
+| `configs/rung2-bge-m3.yaml` | the same 32,043 | `bge-m3` — the same screen, one rung up |
+| `configs/rung2-gte-base.yaml` | the same 32,043 | `gte-multilingual-base` — the same screen, one rung up |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
+
+Each rung-2 file is its rung-1 counterpart with `index.size` set to `null` —
+and `index.stratify` to `false`, which a full index makes inert — and nothing
+else touched, the fusion weights included, though they were tuned for
+`multilingual-e5-base`. That is deliberate: rung 2 asks whether the encoder
+ranking survives the index growing fourfold, and a retuning inside that
+measurement would be reported as a scaling result.
+`scripts/compare_rungs.py` refuses a pair of screens that disagree on any
+section but `index`, so the rule is enforced rather than remembered.
 
 The loader ([`llms4subjects/config.py`](../llms4subjects/config.py)) rejects
 unknown keys rather than ignoring them, because a misspelled ablation flag

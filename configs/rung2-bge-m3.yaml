@@ -1,0 +1,56 @@
+# Rung 2 with `BAAI/bge-m3` (ticket 10). Rung 1's runner-up, 0.0022 behind the
+# winner and ahead of it on the zero-shot band, which is why the ladder carries
+# two encoders forward rather than one.
+#
+# One line apart from configs/rung2.yaml — the encoder — and one index section
+# apart from configs/rung1-bge-m3.yaml. Its dense tower alone: the sparse term
+# weights its forward pass could also emit are still not wired to the lexical
+# retriever, so its lexical column is the same BM25 as every other row's — the
+# same choice rung 1 made, held here so the pair of rows differs in index size
+# only.
+name: rung2-bge-m3
+
+encoder:
+  name: BAAI/bge-m3
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  # The whole split. `size: null` takes every document, so there is no draw to
+  # seed and nothing to stratify; `seed` stays only so that the section differs
+  # from rung 1's in the one field that is the variable.
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` at rung 1, because
+    # the one variable between the rungs is index size.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Rung 2, `bge-m3` — rung 1's runner-up, and the strongest label tower there,
+  re-measured at the full index. Dense tower only; its sparse weights are not
+  wired, so its lexical retriever is the same BM25 as everyone else's.

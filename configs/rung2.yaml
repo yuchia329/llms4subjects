@@ -1,6 +1,21 @@
-# Rung 2: the full official tib-core train split (32,043 documents) as index,
-# same four off-the-shelf encoders. Answers whether the rung-1 encoder ranking
-# is stable across index scale.
+# Rung 2 of the experiment ladder (docs/spec.md, "The experiment ladder"): the
+# full official tib-core train split, all 32,043 documents, as the retrieval
+# index. The same four off-the-shelf encoders as rung 1, none of them trained.
+#
+# The rung answers one question (ticket 10): does the encoder ranking change
+# when the index grows fourfold? So **only index size moves between rungs 1 and
+# 2**. Every other section of this file is character-for-character what
+# configs/rung1.yaml carries, including the fusion weights tuned there for
+# `multilingual-e5-base` — retuning them here would put a tuning change inside
+# a scaling measurement, and the comparison would report the sum of the two.
+#
+# Retuning is rung 3's business, for whichever encoder rung 2 shortlists.
+#
+#   python scripts/screen_encoders.py configs/rung2.yaml configs/rung2-e5-large.yaml \
+#       configs/rung2-bge-m3.yaml configs/rung2-gte-base.yaml \
+#       --json reference/screens/rung2.json
+#   python scripts/compare_rungs.py reference/screens/rung1.json \
+#       reference/screens/rung2.json
 name: rung2-e5-base
 
 encoder:
@@ -10,6 +25,12 @@ encoder:
 
 index:
   corpora: [core_train]
+  # The whole split. `size: null` takes every document, so there is no draw to
+  # seed and nothing to stratify — which is why `stratify` goes to `false` here
+  # too, the second and last field the index section moves by. It is inert
+  # (`select_documents` never samples once `size` is null), and leaving it
+  # `true` would describe a stratification that does not happen. `seed` stays as
+  # it is, unread.
   size: null
   stratify: false
   seed: 42
@@ -24,7 +45,9 @@ retrievers:
     enabled: true
     neighbours: 20
     top_k: 100
-    weight: 1.0
+    # Held at the values tuned for `multilingual-e5-base` at rung 1, because
+    # the one variable between the rungs is index size.
+    weight: 1.5
   dense:
     enabled: true
     top_k: 100
@@ -39,5 +62,6 @@ fusion:
   rrf_k: 60
 
 notes: >
-  Fusion weights are tuned on dev at this rung; the values here are the
-  untuned starting point.
+  Rung 2, `multilingual-e5-base`. Read against the other three rung-2 encoder
+  rows, and against its own rung-1 row: everything but the index is held at
+  rung 1's values, so the difference between the two rows is index size alone.

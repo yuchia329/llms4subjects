@@ -6,12 +6,18 @@
 
     python scripts/screen_encoders.py configs/rung1.yaml ... --cold
     python scripts/screen_encoders.py configs/rung1.yaml ... --limit 500
+    python scripts/screen_encoders.py configs/rung2.yaml ... \\
+        --json reference/screens/rung2.json
 
-Rung 1 of the experiment ladder, and the cheapest decision in the project:
-which encoder deserves the GPU budget. All four candidates run off the shelf at
-an 8,000-document index, entirely on the Mac, and are ranked on dev micro
-Recall@10 — the project's model-selection metric — with the frozen frequency
-bands broken out beside it.
+Rungs 1 and 2 of the experiment ladder, and the cheapest decision in the
+project: which encoder deserves the GPU budget. All four candidates run off the
+shelf at one index size — 8,000 documents at rung 1, the full 32,043 at rung 2 —
+entirely on the Mac, and are ranked on dev micro Recall@10, the project's
+model-selection metric, with the frozen frequency bands broken out beside it.
+
+The script is one rung at a time. `--json` writes the whole screen out, and
+`scripts/compare_rungs.py` reads two of those files to answer the question rung
+2 exists for: whether the ranking survived the index growing fourfold.
 
 Screening untrained is deliberate. An off-the-shelf encoder will not beat a
 fine-tuned one, but the ranking among encoders is expected to survive
@@ -36,6 +42,7 @@ discarding the vectors afterwards.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import tempfile
 import time
@@ -60,6 +67,7 @@ from llms4subjects.stages.evaluator import (  # noqa: E402
     EvaluationReport,
     evaluate,
 )
+from compare_rungs import SCHEMA  # noqa: E402
 from run_experiment import FORBIDDEN_SPLIT, load_inputs  # noqa: E402
 
 # Model selection is micro Recall@10 on dev, everywhere in this project.
@@ -73,6 +81,14 @@ TABLE_KS = (5, 10, 50)
 # variable; `name` and `notes` are how a config identifies itself to a reader.
 HELD_EQUAL = ("index", "label_text", "retrievers", "fusion", "group_prior",
               "reranker", "adjudication")
+
+# What a written screen carries so that a *later* screen can be compared
+# against it (ticket 10): everything above except `index`, which is the one
+# thing the rungs of the ladder are allowed to differ in. Persisting `index`
+# here would make `scripts/compare_rungs.py` refuse every comparison it exists
+# to make, and leaving it out is safe because index size is the axis that
+# comparison orders its columns by.
+PERSISTED_EQUAL = tuple(section for section in HELD_EQUAL if section != "index")
 
 # The one field inside the encoder section that is not the variable. How much of
 # a document the model reads is a property of the experiment, not of the model:
@@ -131,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="time each pass against a throwaway artifact root, discarding vectors",
     )
+    parser.add_argument(
+        "--json",
+        dest="json_path",
+        help="also write the screen here, for scripts/compare_rungs.py",
+    )
     args = parser.parse_args(argv)
 
     if args.split == FORBIDDEN_SPLIT:
@@ -158,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
           f"{args.split} records")
     print(f"data revision: {inputs.revision}")
     print(describe_device(device))
-    print(f"index: {configs[0].index.size} documents from "
+    indexed = len(select_documents(inputs.index_records, configs[0].index))
+    print(f"index: {indexed} of {len(inputs.index_records)} documents from "
           f"{', '.join(configs[0].index.corpora)}, "
           f"stratify={configs[0].index.stratify}, seed={configs[0].index.seed}")
     print("timing: cold, against a throwaway artifact root" if args.cold
@@ -191,7 +213,124 @@ def main(argv: list[str] | None = None) -> int:
     print(render_cost(ranked))
     print()
     print(render_provenance(ranked))
+
+    if args.json_path:
+        write_screen(
+            args.json_path,
+            ranked,
+            split=args.split,
+            records=len(inputs.records),
+            revision=inputs.revision,
+            device=device,
+            corpus=len(inputs.index_records),
+            indexed=len(select_documents(inputs.index_records, configs[0].index)),
+        )
+        print(f"\nwrote {args.json_path}")
     return 0
+
+
+def document(
+    rows: Sequence[Screened],
+    *,
+    split: str,
+    records: int,
+    revision: str,
+    device: str,
+    corpus: int,
+    indexed: int,
+) -> dict:
+    """The whole screen as plain data, for `scripts/compare_rungs.py`.
+
+    A screen costs hours of Apple Silicon, and the claim it supports — whether
+    the encoder ranking survives the index growing — is a statement about two
+    screens taken days apart. Written out, the comparison is arithmetic over two
+    files that can be re-run in milliseconds and re-read after the fact; held
+    only in a terminal, it would be a table someone retyped.
+    """
+    first = rows[0].config
+    return {
+        "schema": SCHEMA,
+        "split": split,
+        "records": records,
+        "data_revision": revision,
+        "selection_k": SELECTION_K,
+        "device": device,
+        "index": {
+            "documents": indexed,
+            "corpus": corpus,
+            "corpora": list(first.index.corpora),
+            "stratify": first.index.stratify,
+            "seed": first.index.seed,
+        },
+        "rows": [_row_document(row) for row in rows],
+    }
+
+
+def _row_document(row: Screened) -> dict:
+    return {
+        "encoder": row.name,
+        "config": row.config.name,
+        "dimensions": row.dimensions,
+        "parameters": row.parameters,
+        "load_seconds": row.load_seconds,
+        "retrieve_seconds": row.retrieve_seconds,
+        "wrote": row.wrote,
+        "micro": _at_k(row.fused.micro, row.fused.ks),
+        "official_macro": _at_k(row.fused.official_macro, row.fused.ks),
+        "bands": {
+            band: _at_k(metrics, row.fused.ks)
+            for band, metrics in row.fused.by_band.items()
+        },
+        "per_retriever": {
+            name: _at_k(report.micro, report.ks)
+            for name, report in row.per_retriever.items()
+        },
+        "held_equal": {
+            **{
+                section: _without_disabled(row.config.section(section))
+                for section in PERSISTED_EQUAL
+            },
+            **{
+                f"encoder.{field}": getattr(row.config.encoder, field)
+                for field in HELD_EQUAL_IN_ENCODER
+            },
+        },
+    }
+
+
+def _without_disabled(value):
+    """A stage that is off keeps only its off switch, whatever else it declares.
+
+    A screen document outlives the code that wrote it, and every later ticket
+    adds fields to the config sections it works on: ticket 13 gave
+    `adjudication` a temperature, a token budget and four more knobs. A rung-1
+    screen taken before that and a rung-2 screen taken after it would then
+    disagree on `adjudication` and `scripts/compare_rungs.py` would refuse the
+    comparison — over the parameters of a stage that ran in neither.
+
+    So a section reporting `enabled: false` is persisted as exactly that. It
+    cannot have moved a number it never touched, and what is left is the claim
+    worth checking: that the stage was off at both index sizes.
+    """
+    if isinstance(value, dict):
+        if value.get("enabled") is False:
+            return {"enabled": False}
+        return {key: _without_disabled(item) for key, item in value.items()}
+    return value
+
+
+def _at_k(metrics, ks: Sequence[int]) -> dict[str, float]:
+    """Recall at each scored k. JSON object keys are strings, so k is one too."""
+    return {str(k): metrics.recall(k) for k in ks}
+
+
+def write_screen(path, rows: Sequence[Screened], **about) -> None:
+    """Write the screen document, creating its directory if it is missing."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document(rows, **about), indent=2, sort_keys=True, ensure_ascii=False)
+    )
 
 
 def check(configs: Sequence[ExperimentConfig]) -> None:
@@ -353,20 +492,24 @@ def rank(rows: Sequence[Screened], k: int) -> list[Screened]:
 
 
 def render_stratification(index_records, config: ExperimentConfig) -> str:
-    """What the 8,000-document index is made of, cell by cell.
+    """What this rung's index is made of, cell by cell.
 
     Printed rather than asserted, because the criterion is that the subset is
     stratified by record type and language *and reproducible*: the sample is a
     seeded draw from `index.seed`, so this table is the same table on any
     machine, and a reader can see that no cell was dropped for being small.
+
+    Still printed at rung 2, where the index is the whole corpus and there is no
+    draw to describe: the two rungs' tables side by side are what show that the
+    larger index differs from the smaller one in size and not in composition.
     """
     selected = select_documents(index_records, config.index)
     corpus = _cells(index_records)
     sample = _cells(selected)
 
     lines = [
-        f"### The rung-1 index: {len(selected)} of {len(index_records)} documents, "
-        f"stratified (seed {config.index.seed})\n",
+        f"### The index: {len(selected):,} of {len(index_records):,} documents, "
+        f"{_how_drawn(config, len(selected), len(index_records))}\n",
         "| record type | language | corpus | corpus share | sampled | sampled share |",
         "|---|---|---:|---:|---:|---:|",
     ]
@@ -377,6 +520,15 @@ def render_stratification(index_records, config: ExperimentConfig) -> str:
             f"{sample.get(cell, 0) / max(len(selected), 1):.4f} |"
         )
     return "\n".join(lines)
+
+
+def _how_drawn(config: ExperimentConfig, selected: int, corpus: int) -> str:
+    """How this index was chosen, which is not the same at every rung."""
+    if selected >= corpus:
+        return "unstratified — every document in the corpus"
+    if config.index.stratify:
+        return f"stratified (seed {config.index.seed})"
+    return f"an unstratified draw (seed {config.index.seed})"
 
 
 def _cells(records) -> dict[tuple[str, str], int]:

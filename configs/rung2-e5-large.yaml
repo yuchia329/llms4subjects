@@ -1,0 +1,57 @@
+# Rung 2 with `intfloat/multilingual-e5-large` (ticket 10).
+#
+# Screened again at the full index despite finishing last at rung 1, because
+# that result is the one most worth checking against scale: within the E5
+# family the larger checkpoint was the *worse* retriever, losing on the
+# document-to-label tower what it gained on neighbours. A four-times larger
+# index gives the neighbour tower more to work with, so if any row is going to
+# move, this is the row.
+#
+# One line apart from configs/rung2.yaml — the encoder — and one index section
+# apart from configs/rung1-e5-large.yaml.
+name: rung2-e5-large
+
+encoder:
+  name: intfloat/multilingual-e5-large
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  # The whole split. `size: null` takes every document, so there is no draw to
+  # seed and nothing to stratify; `seed` stays only so that the section differs
+  # from rung 1's in the one field that is the variable.
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` at rung 1, because
+    # the one variable between the rungs is index size.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Rung 2, `multilingual-e5-large`. Kept in the screen so that "the larger
+  checkpoint was the worse retriever" is a claim measured at both index sizes
+  rather than at the smaller one only.

@@ -260,3 +260,238 @@ def test_a_different_batch_size_is_allowed():
     ]
 
     assert screen.differences(configs) == {}
+
+
+# --- The screen as a file, so rung 2 can be compared against it --------------
+
+
+def _compare():
+    """`scripts/compare_rungs.py`, which is what reads what the screen writes."""
+    return _script("compare_rungs")
+
+
+def test_the_written_screen_is_what_the_comparator_accepts(tmp_path):
+    """The two scripts are one seam: the writer's output is the reader's input.
+
+    Asserted as a round trip rather than against a hand-written fixture, because
+    the failure this guards is the two scripts drifting apart between a rung-1
+    screen taken in one week and a rung-2 screen taken in the next.
+    """
+    rows = screen.rank([screened("a", 0.31), screened("b", 0.42)], 10)
+    path = tmp_path / "rung.json"
+
+    screen.write_screen(
+        path,
+        rows,
+        split="core_dev",
+        records=5354,
+        revision="abcdef123456",
+        device="mps",
+        corpus=32043,
+        indexed=8000,
+    )
+    loaded = _compare().load_screen(path)
+
+    assert loaded.documents == 8000
+    assert loaded.corpus == 32043
+    assert loaded.split == "core_dev"
+    assert loaded.selection_k == screen.SELECTION_K
+    assert _compare().ranking(loaded, 10) == ["lab/b", "lab/a"]
+
+
+def test_the_written_screen_carries_what_the_screen_held_equal(tmp_path):
+    """Otherwise the comparator cannot tell a scaling result from a retuning."""
+    document = screen.document(
+        [screened("a", 0.31), screened("b", 0.42)],
+        split="core_dev",
+        records=10,
+        revision="rev",
+        device="cpu",
+        corpus=32043,
+        indexed=8000,
+    )
+
+    held = document["rows"][0]["held_equal"]
+    assert "fusion" in held and "label_text" in held
+    assert "encoder.max_length" in held
+
+
+def test_the_written_screen_leaves_the_index_out_of_what_is_held_equal(tmp_path):
+    """Index size is the variable between rungs; holding it equal would refuse
+    every comparison the ticket exists to make."""
+    document = screen.document(
+        [screened("a", 0.31), screened("b", 0.42)],
+        split="core_dev",
+        records=10,
+        revision="rev",
+        device="cpu",
+        corpus=32043,
+        indexed=8000,
+    )
+
+    assert "index" not in document["rows"][0]["held_equal"]
+
+
+def test_a_full_index_is_reported_as_the_whole_corpus_not_as_a_sample(tmp_path):
+    """Rung 2 indexes everything, so there is no stratified draw to describe."""
+    records = [
+        record("1", "Book", "de"),
+        record("2", "Book", "en"),
+        record("3", "Article", "en"),
+    ]
+    config = experiment("a", "lab/one", index=IndexConfig(size=None, stratify=False))
+
+    table = screen.render_stratification(records, config)
+
+    assert "3 of 3 documents" in table
+    assert "unstratified" in table
+
+
+def test_every_committed_screen_still_matches_the_configs_it_names():
+    """A config edited after its screen ran would make the screen a fiction.
+
+    The screen records what it held equal, and the configs are still on disk, so
+    the drift is checkable: retuning `configs/rung2.yaml` without re-running the
+    rung would fail here rather than quietly changing what the rung-2 table in
+    docs/results.md is a table of.
+    """
+    import json
+
+    from llms4subjects.config import load_experiment
+
+    root = Path(__file__).resolve().parent.parent
+    by_name = {
+        load_experiment(path).name: path for path in sorted((root / "configs").glob("*.yaml"))
+    }
+
+    screens = sorted((root / "reference" / "screens").glob("*.json"))
+    if not screens:
+        pytest.skip("no committed screens")
+
+    for path in screens:
+        document = json.loads(path.read_text())
+        for row in document["rows"]:
+            config = load_experiment(by_name[row["config"]])
+            expected = screen.document(
+                [
+                    screen.Screened(
+                        config=config,
+                        dimensions=row["dimensions"],
+                        parameters=row["parameters"],
+                        fused=report(0.0),
+                        per_retriever={},
+                        load_seconds=0.0,
+                        retrieve_seconds=0.0,
+                        wrote=0,
+                    )
+                ],
+                split=document["split"],
+                records=document["records"],
+                revision=document["data_revision"],
+                device=document["device"],
+                corpus=document["index"]["corpus"],
+                indexed=document["index"]["documents"],
+            )
+            assert expected["rows"][0]["held_equal"] == row["held_equal"], (
+                f"{path.name}: {row['config']} has been edited since the screen ran"
+            )
+            # `held_equal` deliberately excludes `index` — that is the variable
+            # between the rungs — so the index is checked here against the block
+            # the screen wrote, or an edit to the one field the whole comparison
+            # turns on would be the one edit this test could not see.
+            index = document["index"]
+            expected_documents = (
+                min(config.index.size, index["corpus"])
+                if config.index.size is not None
+                else index["corpus"]
+            )
+            assert index["documents"] == expected_documents, (
+                f"{path.name}: {row['config']} now indexes "
+                f"{expected_documents} documents, not {index['documents']}"
+            )
+            assert list(config.index.corpora) == index["corpora"]
+            assert config.index.stratify == index["stratify"]
+            assert config.index.seed == index["seed"]
+
+
+def test_a_disabled_stage_is_persisted_as_off_and_nothing_else():
+    """Its parameters cannot have moved a number, and they change between rungs.
+
+    Every later ticket adds fields to the section it works on, so persisting a
+    disabled stage in full would make a screen from last month incomparable to
+    one from today over knobs neither run used.
+    """
+    from llms4subjects.config import AdjudicationConfig, RerankerConfig
+
+    config = experiment(
+        "a",
+        "lab/one",
+        adjudication=AdjudicationConfig(enabled=False, candidates=30),
+        reranker=RerankerConfig(enabled=False, input_k=50),
+    )
+    row = dataclasses.replace(screened("a", 0.1), config=config)
+
+    document = screen.document(
+        [row],
+        split="core_dev",
+        records=1,
+        revision="rev",
+        device="cpu",
+        corpus=1,
+        indexed=1,
+    )
+
+    held = document["rows"][0]["held_equal"]
+    assert held["adjudication"] == {"enabled": False}
+    assert held["reranker"] == {"enabled": False}
+
+
+def test_an_enabled_stage_is_persisted_in_full():
+    """Its parameters are exactly what the two rungs have to have held equal."""
+    from llms4subjects.config import GroupPriorConfig
+
+    config = experiment(
+        "a", "lab/one", group_prior=GroupPriorConfig(enabled=True, weight=0.5)
+    )
+    row = dataclasses.replace(screened("a", 0.1), config=config)
+
+    document = screen.document(
+        [row],
+        split="core_dev",
+        records=1,
+        revision="rev",
+        device="cpu",
+        corpus=1,
+        indexed=1,
+    )
+
+    assert document["rows"][0]["held_equal"]["group_prior"]["weight"] == 0.5
+
+
+def test_a_disabled_retriever_is_collapsed_too():
+    """One retriever off with a stale `top_k` beside it is the same trap."""
+    from llms4subjects.config import RetrieverConfig
+
+    config = experiment(
+        "a",
+        "lab/one",
+        retrievers={
+            "knn": RetrieverConfig(enabled=True, weight=1.5),
+            "dense": RetrieverConfig(enabled=False, top_k=100),
+        },
+    )
+    row = dataclasses.replace(screened("a", 0.1), config=config)
+
+    document = screen.document(
+        [row],
+        split="core_dev",
+        records=1,
+        revision="rev",
+        device="cpu",
+        corpus=1,
+        indexed=1,
+    )
+
+    retrievers = document["rows"][0]["held_equal"]["retrievers"]
+    assert retrievers["dense"] == {"enabled": False}
+    assert retrievers["knn"]["weight"] == 1.5

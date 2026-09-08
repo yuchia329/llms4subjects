@@ -36,9 +36,9 @@ configs/                one committed YAML per rung of the experiment ladder
 reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
 scripts/                run_experiment.py, ablate_retrievers.py,
-                        screen_encoders.py, adjudicate_report.py,
-                        verify_model_releases.py, the fixture and band
-                        freeze commands
+                        screen_encoders.py, compare_rungs.py,
+                        adjudicate_report.py, verify_model_releases.py,
+                        the fixture and band freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -375,7 +375,30 @@ two configs naming the same one, because otherwise it ranks a retuning rather
 than a model. `multilingual-e5-large` scoring below its own base model is the
 result worth knowing: within one family the larger checkpoint was the better
 document-to-document encoder and the worse document-to-label one, and the label
-tower is what reaches the tail. Rungs 2 and 3 carry the top two forward; see
+tower is what reaches the tail.
+
+The same four then run at the full 32,043-document index, with index size as the
+only variable, to find out whether that ranking meant anything:
+
+| encoder | @ 8,000 | @ 32,043 | rank |
+|---|---:|---:|---|
+| `BAAI/bge-m3` | 0.4702 | **0.5337** | 2 → 1 |
+| `Alibaba-NLP/gte-multilingual-base` | 0.4724 | 0.5298 | 1 → 2 |
+| `intfloat/multilingual-e5-base` | 0.4149 | 0.4961 | 3 → 3 |
+| `intfloat/multilingual-e5-large` | 0.4063 | 0.4926 | 4 → 4 |
+
+```
+python scripts/screen_encoders.py configs/rung2.yaml configs/rung2-e5-large.yaml     configs/rung2-bge-m3.yaml configs/rung2-gte-base.yaml     --json reference/screens/rung2.json
+python scripts/compare_rungs.py reference/screens/rung1.json     reference/screens/rung2.json
+```
+
+**The ranking did not hold** — Spearman ρ 0.800, Kendall τ-b 0.667 — so cheap
+screening generalises for the *membership* of the shortlist and not for its
+order: the top two are the same pair at both index sizes, by 0.0336 and more over
+the third, and they swap with each other on 0.0039. Both go to rung 3, which is
+what carrying two forward was for. The dense and lexical columns are identical at
+both index sizes, as they must be — neither reads an indexed document — so every
+difference is the neighbour retriever's. See
 [docs/results.md](docs/results.md).
 
 ## Evaluation

@@ -1,0 +1,55 @@
+# Rung 2 with `Alibaba-NLP/gte-multilingual-base` (ticket 10). Rung 1's winner
+# at 0.4724 dev micro R@10, and the encoder the shortlist starts from.
+#
+# One line apart from configs/rung2.yaml — the encoder — and one index section
+# apart from configs/rung1-gte-base.yaml. That second pairing is the
+# measurement: index size moves, nothing else does. The only candidate that
+# ships its own modelling code rather than using the one in `transformers`, so
+# loading it executes code from the hub; reference/model_releases.json pins both
+# that code and the weights to commits inside the 2025-01-31 cutoff.
+name: rung2-gte-base
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  # The whole split. `size: null` takes every document, so there is no draw to
+  # seed and nothing to stratify; `seed` stays only so that the section differs
+  # from rung 1's in the one field that is the variable.
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Held at the values tuned for `multilingual-e5-base` at rung 1, because
+    # the one variable between the rungs is index size.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Rung 2, `gte-multilingual-base` — rung 1's winner, re-measured at the full
+  index. The one candidate loaded with its own modelling code, pinned in
+  reference/model_releases.json alongside the weights.
