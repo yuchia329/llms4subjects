@@ -1,0 +1,20 @@
+# CUDA environment, for the two contrastive fine-tunes and the one baseline
+# re-run that need rented hardware. Nothing else in the project uses it.
+#
+#   pip install -r requirements/gpu.txt
+#
+# The extra index pulls the CUDA 12.4 build of torch; the nvidia-* wheels come
+# in as its dependencies rather than being pinned here.
+
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+-r base.txt
+
+torch==2.5.1+cu124
+
+# Parameter-efficient fine-tuning, per docs/spec.md user story 43.
+accelerate==1.1.1
+peft==0.14.0
+datasets==3.1.0
+
+torch-geometric==2.6.1

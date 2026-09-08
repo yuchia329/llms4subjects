@@ -27,7 +27,7 @@ llms4subjects/          the pipeline, one module per stage under stages/
   corpus.py             the only module that reads the dataset
   artifacts.py          the cached-artifact convention
   hardware.py           device selection, and what to say when CUDA is absent
-  pipeline.py           predict(records, config) — the seam tests assert against
+  pipeline.py           predict(...) — the seam tests assert against
   stages/               label_text, encoders, indexes, retrievers, fusion,
                         group_prior, reranker, adjudicator, evaluator, submission
 baseline/               the rejected classifier, kept runnable as a results row

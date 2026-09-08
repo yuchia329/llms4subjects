@@ -1,0 +1,43 @@
+# Rung 2: the full official tib-core train split (32,043 documents) as index,
+# same four off-the-shelf encoders. Answers whether the rung-1 encoder ranking
+# is stable across index scale.
+name: rung2-e5-base
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.0
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Fusion weights are tuned on dev at this rung; the values here are the
+  untuned starting point.

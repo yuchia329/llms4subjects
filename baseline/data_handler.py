@@ -1,10 +1,29 @@
+"""Data loading for the archived classifier.
+
+Reads the clean official splits through `llms4subjects.paths`, so the paths are
+correct from any working directory and there is exactly one place in the repo
+that knows where the dataset lives. Nothing in `llms4subjects/` imports this
+module; the dependency runs one way only.
+"""
+
 import polars as pl
-from collections import Counter
+
+from llms4subjects.paths import SPLIT_FILES
+
+TRAIN_CSV = SPLIT_FILES["core_train"]
+DEV_CSV = SPLIT_FILES["core_dev"]
 
 
-def load_training_data_one_hot_labelsets():
-    file_path = "TIBKAT_dataset/core_train.csv"
-    df = pl.read_csv(file_path)
+def load_training_data_one_hot_labelsets(records_size=None):
+    """One-hot label matrix over the training split.
+
+    `records_size` takes a prefix of the split. The full matrix is 32,043
+    records by 14,607 labels, which is a GPU-host workload; the prefix exists
+    so a smoke run reaches the first training step on a laptop.
+    """
+    df = pl.read_csv(TRAIN_CSV)
+    if records_size is not None:
+        df = df[:records_size]
     # combine title + abstract
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
@@ -37,15 +56,13 @@ def get_TIBKAT_unique_labels(dataframe):
 
 
 def load_unique_training_label():
-    file_path = "TIBKAT_dataset/core_train.csv"
-    df = pl.read_csv(file_path)
+    df = pl.read_csv(TRAIN_CSV)
     unique_labels = get_TIBKAT_unique_labels(df)
     return unique_labels
 
 
 def load_unique_dev_label(records_size=None):
-    file_path = "TIBKAT_dataset/core_dev.csv"
-    df = pl.read_csv(file_path)
+    df = pl.read_csv(DEV_CSV)
     if records_size is not None:
         df = df[:records_size]
 
@@ -54,7 +71,8 @@ def load_unique_dev_label(records_size=None):
 
 
 def load_dev_data_one_hot(label_size=None):
-    df = pl.read_csv("TIBKAT_dataset/core_dev.csv", row_index_name="id")
+    # the CSV carries the official TIBKAT record id, no synthetic row index needed
+    df = pl.read_csv(DEV_CSV)
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
     )
@@ -98,7 +116,8 @@ def load_dev_data_one_hot(label_size=None):
 
 
 def load_dev_data(label_size=None, records_size=None):
-    df = pl.read_csv("TIBKAT_dataset/core_dev.csv", row_index_name="id")
+    # the CSV carries the official TIBKAT record id, no synthetic row index needed
+    df = pl.read_csv(DEV_CSV)
     df = df.with_columns(
         pl.concat_str(["title", "abstract"], separator=" ").alias("input")
     )

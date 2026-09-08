@@ -1,0 +1,51 @@
+# Rung 3: all-subjects train as index (70,588 documents) with the top two
+# encoders fine-tuned. The adapter is the only artifact produced on rented GPU
+# hardware; indexing, retrieval and evaluation still run on Apple Silicon.
+name: rung3-e5-base-finetuned
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+  adapter: artifacts/adapters/e5-base-contrastive-v1
+
+index:
+  # all_train already contains every core_train record plus 38,545 more, so
+  # naming both would index each core record twice.
+  corpora: [all_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.0
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+# The reranker, group prior and adjudicator stay off here. Each is turned on by
+# its own ticket, in a config of its own, once its contribution and its
+# parameters are measured rather than guessed — naming a model or a weight in
+# this file before then would read as a decision that had been made.
+
+notes: >
+  The fine-tuned rung. Band migration against rung 2 is reported here, since
+  the index grows by 38,545 all-subjects documents.

@@ -1,0 +1,30 @@
+# Shared dependencies for every environment. Contains no CUDA wheels and no
+# torch pin: the torch build is chosen by the environment file that includes
+# this one (requirements/mac.txt or requirements/gpu.txt), because that is the
+# only pin that differs between Apple Silicon and rented GPU hardware.
+#
+# Library versions are held at their January-2025 era to match the model cutoff
+# declared in docs/spec.md (2025-01-31).
+
+# Data
+polars==1.16.0
+pandas==2.2.3
+pyarrow==18.1.0
+numpy==2.1.3
+PyYAML==6.0.2
+
+# Modelling
+transformers==4.46.3
+tokenizers==0.20.3
+sentence-transformers==3.3.1
+scikit-learn==1.5.2
+scipy==1.14.1
+
+# Retrieval
+faiss-cpu==1.9.0.post1
+rank-bm25==0.2.2
+
+# Analysis and reporting
+matplotlib==3.9.3
+openpyxl==3.1.5
+tqdm==4.67.1

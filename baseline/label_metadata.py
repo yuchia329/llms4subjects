@@ -1,5 +1,11 @@
+"""Label metadata for the archived classifier, read from the clean vocabulary."""
+
 from sentence_transformers import SentenceTransformer
 import json
+
+from llms4subjects.paths import VOCABULARY_FILES
+
+VOCABULARY_JSON = VOCABULARY_FILES["all"]
 
 def concat_subject_metadata(subject_metadata_array):
     merge_array = []
@@ -15,7 +21,7 @@ def concat_subject_metadata(subject_metadata_array):
     return merge_array
 
 def get_subject_metadata(unique_label_set):
-    with open("GND_dataset/GND-Subjects-all.json", mode="r") as file:
+    with open(VOCABULARY_JSON, mode="r") as file:
         label_mapping = json.load(file)
         subject_metadata_mapping = {}
         category_subject_mapping = {}
@@ -39,7 +45,7 @@ def get_subject_metadata(unique_label_set):
 
 def generateLabelMetadata(unique_label_set):
     embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-    with open("GND_dataset/GND-Subjects-all.json", mode="r") as file:
+    with open(VOCABULARY_JSON, mode="r") as file:
         label_mapping = json.load(file)
         subjects_metadata = []
         for label in unique_label_set:

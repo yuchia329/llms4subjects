@@ -1,3 +1,11 @@
+"""Archived one-off analysis scripts. Run from the repository root.
+
+These predate the pipeline and are kept for reference, not developed. Note that
+`clean_GND_labels` rewrites a vocabulary file in place — that class of edit is
+what produced the lossy vocabulary the rebuild replaced, so treat
+`build_tibkat_csv.py` as the only thing allowed to write `GND_dataset/`.
+"""
+
 from collections import Counter
 import matplotlib.pyplot as plt
 import polars as pl
@@ -52,38 +60,14 @@ def generate_duplicate_subject_name_json():
 
 
 def merge_TIBKAT_files():
-    dir = 'TIBKAT/tib-core-subjects/data'
-    for dataset in os.listdir(dir):
-        output_file = f"TIBKAT_dataset/core_{dataset}.csv"
-        next_dir_1 = os.path.join(dir, dataset)
-        for data_type in os.listdir(next_dir_1):
-            next_dir_2 = os.path.join(next_dir_1, data_type)
-            for lang in os.listdir(next_dir_2):
-                next_dir_3 = os.path.join(next_dir_2, lang)
-                for item in os.listdir(next_dir_3):
-                    filepath = os.path.join(next_dir_3, item)
-                    # TIBKAT_sources_path.append(dir)
-                    if os.path.isfile(filepath):
-                        with open(filepath, 'r', encoding='utf-8') as file:
-                            content = json.load(file)
-                            graph = content.get("@graph")
-                            if graph:
-                                filtered_data = [item for item in graph if "title" in item]
-                                filtered_data = filtered_data[0]
-                                title = filtered_data.get("title")
-                                abstract = filtered_data.get("abstract")
-                                subject = filtered_data.get("dcterms:subject")
-                                if not isinstance(subject, list):
-                                    subject = [subject]
-                                subjects = " ".join(item["@id"] for item in subject)
-                                data = [{"title": title, "abstract": abstract, "subjects": subjects}]
-                                file_exists = os.path.isfile(output_file)
-                                with open(output_file, mode="a" if file_exists else "w", encoding="utf-8", newline="") as csvfile:
-                                    headers = data[0].keys()
-                                    writer = csv.DictWriter(csvfile, fieldnames=headers)
-                                    if not file_exists:
-                                        writer.writeheader()
-                                    writer.writerows(data)                            
+    """Removed. Use build_tibkat_csv.py instead.
+
+    This walked the JSON-LD tree with a fixed train/dev directory depth, appended to
+    the output file on every run, kept no record id, and wrote list-valued abstracts
+    through str(), which is how the previous CSVs picked up duplicate and malformed
+    rows. See legacy/README.md for the damage it did.
+    """
+    raise NotImplementedError("use build_tibkat_csv.py")
 
 
 def generate_subject_mapping_file():

@@ -1,0 +1,15 @@
+# CUDA-free environment. Indexing, retrieval, reranking and all evaluation run
+# here; see docs/spec.md ("Rungs 1-2 and all evaluation must run without CUDA").
+#
+#   uv venv && uv pip install -r requirements/mac.txt
+#
+# torch's macOS arm64 wheel carries no CUDA and exposes the MPS backend, so no
+# GPU vendor wheel is ever resolved from this file.
+
+-r base.txt
+
+torch==2.5.1
+
+# Only the archived baseline in baseline/ imports this; the current pipeline
+# does not, because the vocabulary has no hierarchy to convolve over.
+torch-geometric==2.6.1

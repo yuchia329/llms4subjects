@@ -1,27 +1,32 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW, AutoModel
-import numpy as np
-import os
-from data_handler import load_unique_training_label, load_dev_data_one_hot
-from label_metadata import generateLabelMetadata
-import torch.nn as nn
+"""Evaluation for the archived classifier, against the clean dev split.
+
+Scores a checkpoint directory. Note that `baseline/train.py` does not currently
+write one — its save calls are commented out, so the checkpoints this was run
+against were produced by hand. See the defect list in `baseline/__init__.py`.
+
+Its metrics are the original ones and are NOT the project's measurement seam:
+comparable numbers come from the shared evaluator with frozen bands (ticket 03),
+which is what ticket 14 scores this model through.
+
+    python -m baseline.eval_bert_rebota --model-path fine_tuned_model_xlm_64
+"""
+
+import argparse
 import time
 
-LABEL_SIZE = 1
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
-df = load_dev_data_one_hot(label_size=LABEL_SIZE)
-unique_label_set = load_unique_training_label()
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoModel, AutoTokenizer
 
-NUM_LABELS = len(unique_label_set)  # Number of unique subjects
+from baseline.data_handler import load_dev_data_one_hot, load_unique_training_label
+from baseline.label_metadata import generateLabelMetadata
+from llms4subjects.hardware import describe_device, select_device
+
+LABEL_SIZE = 1
 BATCH_SIZE = 64
 MAX_LEN = 512
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-# local_path = "fine_tuned_model_16"
-local_path = "fine_tuned_model_xlm_64"
-tokenizer = AutoTokenizer.from_pretrained(local_path)
-bert_model = AutoModel.from_pretrained(local_path, num_labels=NUM_LABELS).to(DEVICE)
-print(f"LABEL_SIZE: {LABEL_SIZE} BATCH_SIZE: {BATCH_SIZE}, model: {local_path}")
 # Custom Dataset
 class MultiLabelDataset(Dataset):
     def __init__(self, articles, labels, tokenizer, max_len=MAX_LEN):
@@ -57,17 +62,6 @@ class MultiLabelDataset(Dataset):
             "labels": torch.tensor(labels.to_numpy(), dtype=torch.float32).squeeze()
         }
 
-texts = df["input"]
-labels = df.drop("input")
-
-# Convert subject_embeddings to a tensor
-subject_embeddings = generateLabelMetadata(unique_label_set)
-# subject_codes = list(subject_embeddings.keys())
-subject_tensor = torch.tensor(np.stack(list(subject_embeddings.values()))).to(DEVICE)  # Shape: (NUM_LABELS, EMBEDDING_DIM)
-# Create dataset and dataloader
-dataset = MultiLabelDataset(texts, labels, tokenizer)
-dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-
 # Linear layers for dimension alignment
 class ProjectionMapper(nn.Module):
     def __init__(self, bert_dim=768, minilm_dim=384, shared_dim=512):
@@ -80,9 +74,7 @@ class ProjectionMapper(nn.Module):
         minilm_shared = self.minilm_projection(minilm_embeddings)
         return bert_shared, minilm_shared
 
-mapper = ProjectionMapper().to(DEVICE)
-
-def evaluation(model, dataloader, DEVICE):
+def evaluation(model, dataloader, DEVICE, k=LABEL_SIZE):
     # Example usage
     model.eval()
     all_predictions = []
@@ -108,7 +100,6 @@ def evaluation(model, dataloader, DEVICE):
     all_labels = torch.cat(all_labels, dim=0)
 
     # Compute metrics
-    k = LABEL_SIZE
     precision = precision_at_k(all_predictions, all_labels, k)
     recall = recall_at_k(all_predictions, all_labels, k)
     f1 = f1_at_k(all_predictions, all_labels, k)
@@ -213,4 +204,42 @@ def mean_average_precision(predictions, labels):
     return sum(average_precisions) / len(average_precisions) if average_precisions else 0.0
 
 
-evaluation(bert_model, dataloader, DEVICE)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model-path", default="fine_tuned_model_xlm_64",
+                        help="checkpoint directory written by baseline/train.py")
+    parser.add_argument("--label-size", type=int, default=LABEL_SIZE,
+                        help="score only dev records carrying this many labels")
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    parser.add_argument("--device", default="auto", help="auto, cuda, mps or cpu")
+    args = parser.parse_args(argv)
+
+    device = select_device(args.device)
+    print(describe_device(device))
+
+    df = load_dev_data_one_hot(label_size=args.label_size)
+    unique_label_set = load_unique_training_label()
+    num_labels = len(unique_label_set)
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    bert_model = AutoModel.from_pretrained(
+        args.model_path, num_labels=num_labels).to(device)
+    print(f"LABEL_SIZE: {args.label_size} BATCH_SIZE: {args.batch_size}, "
+          f"model: {args.model_path}")
+
+    texts = df["input"]
+    labels = df.drop("input")
+
+    # Convert subject_embeddings to a tensor
+    subject_embeddings = generateLabelMetadata(unique_label_set)
+    # Shape: (NUM_LABELS, EMBEDDING_DIM)
+    torch.tensor(np.stack(list(subject_embeddings.values()))).to(device)
+
+    dataset = MultiLabelDataset(texts, labels, tokenizer, max_len=MAX_LEN)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
+    evaluation(bert_model, dataloader, device, k=args.label_size)
+
+
+if __name__ == "__main__":
+    main()
