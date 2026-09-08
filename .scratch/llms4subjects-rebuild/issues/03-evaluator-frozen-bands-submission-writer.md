@@ -26,13 +26,13 @@ predictions, the local evaluator and the official scorer must agree at every k t
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done — 60cf757
 
-- [ ] Local evaluator agrees with the official scorer to floating-point tolerance at every k from 5 to 50 on a committed fixture
-- [ ] Metrics are reported at both micro and official-macro aggregation, side by side
-- [ ] Every metric is sliceable by frequency band, document language and record type
-- [ ] Band assignments are read from a committed frozen artifact, never recomputed at evaluation time
-- [ ] A test asserts that changing the index does not change any label's band
-- [ ] Hand-computed edge cases pass: gold set larger than k, zero hits, perfect prediction, single-record cell
-- [ ] Submission writer output is re-readable by the official scorer's own reader and round-trips the input lists
-- [ ] The divergence between micro and official-macro aggregation is reported, including which cells dominate the official figure
+- [x] Local evaluator agrees with the official scorer to floating-point tolerance at every k from 5 to 50 on a committed fixture
+- [x] Metrics are reported at both micro and official-macro aggregation, side by side
+- [x] Every metric is sliceable by frequency band, document language and record type
+- [x] Band assignments are read from a committed frozen artifact, never recomputed at evaluation time
+- [x] A test asserts that changing the index does not change any label's band
+- [x] Hand-computed edge cases pass: gold set larger than k, zero hits, perfect prediction, single-record cell
+- [x] Submission writer output is re-readable by the official scorer's own reader and round-trips the input lists
+- [x] The divergence between micro and official-macro aggregation is reported, including which cells dominate the official figure
