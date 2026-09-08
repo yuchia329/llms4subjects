@@ -49,7 +49,12 @@ STAGE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "label_index": ("label_text", "encoder"),
     "document_index": ("encoder", "index"),
     "candidates": ("label_text", "encoder", "index", "retrievers", "fusion"),
-    "group_prior": ("index", "group_prior"),
+    # The trained 66-way head, which is a linear layer over the encoder's
+    # document vectors for the index selection — so it is invalidated by the
+    # encoder as surely as by the documents. Re-fitting it is seconds once the
+    # vectors are cached, which is why the whole `group_prior` section keys it
+    # rather than only the part training reads.
+    "group_prior": ("encoder", "index", "group_prior"),
     "reranked": FULL_PIPELINE[: FULL_PIPELINE.index("adjudication")],
     "adjudicated": FULL_PIPELINE,
     "predictions": FULL_PIPELINE,
@@ -237,3 +242,53 @@ class CachedEncoder:
             np.save(handle, vectors)
         partial.replace(path)
         return vectors
+
+GROUP_PRIOR_STAGE = "group_prior"
+
+# The trained head, as two arrays and the column order they are in. An `.npz`
+# rather than a pickled estimator, so that the artifact outlives the
+# scikit-learn version that fitted it.
+GROUP_PRIOR_FILE = "head.npz"
+
+
+class MissingGroupPrior(FileNotFoundError):
+    """`group_prior.enabled` is on and no head has been fitted for this config."""
+
+
+def save_group_prior(store: ArtifactStore, config: ExperimentConfig, prior) -> Path:
+    """Write a fitted head under this configuration's group-prior key."""
+    directory = store.prepare(GROUP_PRIOR_STAGE, config)
+    path = directory / GROUP_PRIOR_FILE
+    partial = path.with_name(path.name + ".partial")
+    with partial.open("wb") as handle:
+        np.savez(
+            handle,
+            groups=np.array(prior.groups, dtype=object).astype("U"),
+            coefficients=prior.coefficients,
+            intercepts=prior.intercepts,
+        )
+    partial.replace(path)
+    return path
+
+
+def load_group_prior(store: ArtifactStore, config: ExperimentConfig):
+    """The head fitted for this configuration, or how to fit it.
+
+    Read here rather than asked of the caller for the reason the translation
+    cache is: a harness that forgot to pass it would score an unboosted run and
+    file the number under the boosted config.
+    """
+    from .stages.group_prior import GroupPrior
+
+    path = store.path(GROUP_PRIOR_STAGE, config, GROUP_PRIOR_FILE)
+    if not path.exists():
+        raise MissingGroupPrior(
+            f"{path} is missing, and `group_prior.enabled` needs it. Fit it "
+            "with:\n  python scripts/train_group_prior.py <this config>"
+        )
+    with np.load(path, allow_pickle=False) as arrays:
+        return GroupPrior(
+            groups=tuple(str(group) for group in arrays["groups"]),
+            coefficients=arrays["coefficients"],
+            intercepts=arrays["intercepts"],
+        )

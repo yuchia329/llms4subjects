@@ -20,7 +20,13 @@ opened once, at the end of the project (ticket 17).
 | `rung1-dense` | none read | dense label tower only | **0.1224** | 0.1260 | 0.2110 |
 | `rung1-lexical` | none read | lexical label matching only | **0.1558** | 0.1416 | 0.2532 |
 | `rung1` (fused) | 8,000 stratified | all three, RRF | **0.3964** | 0.5340 | 0.5568 |
+| `rung1-prior` † | 8,000 stratified | all three + the 66-group prior | **0.4202** | 0.5464 | 0.5840 |
 | `baseline` (rejected) | — | none: a 14,607-way dense classifier | **0.0667** | 0.1623 | 0.1518 |
+
+† `rung1-prior` was measured after the encoder revision pinning landed, which
+moved every rung-1 figure; its own unboosted baseline, measured in the same
+pass, is 0.4149 micro R@10 rather than the 0.3964 above, so the prior is worth
++0.0053 and not the +0.0238 this column would suggest. See its section.
 
 The three rung-1 rows are not competing. They are three mechanisms reaching
 different parts of the vocabulary — kNN takes the head at 0.69 and the zero-shot
@@ -793,3 +799,118 @@ tower can read German while the lexical index reads both. That is a config
 change with no new mechanism behind it, and it is left as a follow-up rather
 than taken here: it needs its own row against `rung2`, where the encoder ranking
 is settled, rather than a fourth variant of rung 1.
+
+## rung1 — the subject-area group prior
+
+    python scripts/train_group_prior.py configs/rung1-prior.yaml   # fit the head, 12s
+    python scripts/ablate_group_prior.py configs/rung1-prior.yaml  # sweep the weight
+    python scripts/run_experiment.py configs/rung1-prior.yaml
+
+The vocabulary has no hierarchy to propagate through — zero `skos:broader`
+triples — but every one of the 79,427 subjects carries exactly one of 66
+classification groups, and those groups are where a dense output layer finally
+fits: 486 tib-core train documents per group, against the one-positive-in-32,000
+that made the rejected 14,607-way head predict zero.
+
+The head is one logistic regression per group over the encoder's frozen document
+vectors, trained one-against-the-rest because a record's gold labels can name
+more than one group. Its output is normalised to a distribution and **boosts**
+candidates in likely groups; it never filters unlikely ones, because 23.3% of
+multi-label records span three or more groups and a stage that can drop a
+candidate is a filter whatever it is called. It is applied after fusion, so it
+reorders the 100 candidates and cannot change which 100 they are — the candidate
+ceiling in every row below is the unboosted one.
+
+Fitting costs 11 s on the M4 Pro once the document vectors are cached, so this
+is not a fourth GPU run.
+
+### The classifier, on its own
+
+| documents | scored | true groups per record | any in top 1 | any in top 2 | any in top 3 | all in top 2 | all in top 3 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| core_train (32,043) | 32,043 | 1.73 | 0.7246 | 0.8669 | 0.9173 | 0.5537 | 0.6560 |
+| core_dev (5,354) | 5,354 | 1.74 | 0.7107 | 0.8538 | 0.9070 | 0.5295 | 0.6390 |
+
+Against a 1/66 = 0.0152 chance rate, and with train and dev 1.4 points apart, so
+the head is neither guessing nor memorising. The figure the boost's headroom is
+bounded by is `all in top 2` — every true group of a record inside the two the
+head names — at 0.5295 on dev.
+
+**The head wants the corpus, not the index sample.** Trained on the 8,000
+documents `index.size` samples for the retrieval index (121 per group) it scores
+dev top-1 0.6137 and all-in-top-2 0.4701; trained on all 32,043 documents of
+`index.corpora` (486 per group) it scores 0.7107 and 0.5295 — 9.7 points of
+top-1 for no change to what is retrieved. So the head reads the corpora and
+ignores `index.size`, which is also what docs/spec.md story 20 asks for: index
+size and training-set size stay separately attributable. The one-off cost is
+encoding those 32,043 documents, 1,255 s on the M4 Pro, and it is a cache entry
+rung 2 reads back rather than recomputes.
+
+### What the boost is worth, swept on dev (micro recall)
+
+| weight | R@5 | R@10 | R@25 | R@50 | official R@10 |
+|---|---:|---:|---:|---:|---:|
+| 0 — the prior runs, contributes nothing | 0.3205 | 0.4149 | 0.4955 | 0.5686 | 0.5376 |
+| 0.05 | 0.3219 | 0.4157 | 0.4963 | 0.5713 | 0.5376 |
+| 0.1 | 0.3233 | 0.4182 | 0.4967 | 0.5729 | 0.5414 |
+| 0.25 | 0.3255 | 0.4192 | 0.4986 | 0.5793 | **0.5501** |
+| **0.5** (committed) | 0.3250 | **0.4202** | 0.5032 | 0.5840 | 0.5464 |
+| 1.0 | 0.3250 | 0.4144 | 0.5062 | 0.5859 | 0.5425 |
+| 2.0 | 0.3146 | 0.3993 | 0.4986 | 0.5830 | 0.5005 |
+
+The weight is in units of a record's own candidate score range — at 1.0 a group
+the head is certain of moves a candidate across the whole list — which is the
+only unit that means the same thing for a fused list of reciprocal-rank sums, a
+lone cosine similarity and a lone BM25 score. Weight 0 is not the same row as
+the prior being off: it runs, costs its fit, and reproduces the unboosted
+ranking exactly, which `scripts/ablate_group_prior.py` asserts rather than
+assumes.
+
+**+0.0053 micro R@10, +0.0088 official R@10.** The selection metric peaks at
+0.5 and the official macro figure one step earlier at 0.25; the two rows are
+0.001 apart on micro R@10, so the committed weight follows the project's stated
+selection rule rather than the more flattering column. Past 1.0 the boost starts
+overriding the retrievers and every column falls.
+
+### By frequency band (micro R@10, at the committed weight)
+
+| band | unboosted | boosted | change |
+|---|---:|---:|---:|
+| head (2,025) | 0.7022 | 0.7180 | **+0.0158** |
+| torso (5,766) | 0.4610 | 0.4651 | +0.0041 |
+| tail (4,177) | 0.2612 | 0.2648 | +0.0036 |
+| zero (1,117) | 0.2310 | 0.2292 | **−0.0018** |
+
+This is the check the ticket asks for, and it half fails. Three of the four
+bands gain, in descending order of label frequency, and the zero-shot band
+loses 0.0018 — 2 gold assignments of 1,117. The direction is structural rather
+than noise: it appears at every weight above 0.1 and grows with the weight, to
+−0.0269 at 2.0. A group prediction is a statement about what a document is
+about, so it is loudest for the 65 broad headings that name whole subject areas,
+and a zero-shot label reached only through its label text is competing for rank
+against exactly those headings.
+
+So the prior is a head-band instrument. It buys 1.6 points of the band that was
+already this pipeline's strongest and gives back a fifth of a point of the band
+the design exists to reach.
+
+### What this changes
+
+`group_prior.enabled` stays **false** in `configs/rung1.yaml` and the rest of
+the ladder; `configs/rung1-prior.yaml` is the committed ablation and this
+section is its number. +0.005 micro R@10 for a stage with its own training step,
+its own artifact and a measurable cost to the zero-shot band is not a trade this
+rung should make silently, and the honest reading of the sweep is that the boost
+is worth about a third of what retuning the fusion weights was (+0.026).
+
+Two things would change the verdict, and both belong to later rungs rather than
+this one. At rung 2 the index grows to the 32,043 documents the head already
+trains on, so the retrievers get stronger while the head does not — the boost
+should be re-swept there rather than assumed to hold. And a per-band weight, or
+a boost that skips the head band, would keep the gain without the zero-shot
+cost; that is a new mechanism, so it needs its own row and is not taken here.
+
+The unboosted column above is re-measured in the same pass rather than taken
+from the `rung1` section, because the encoder revision pinning landed in this
+checkout in between and moved every rung-1 figure. The pair is internally
+consistent: both columns come from one retrieval pass over one index.

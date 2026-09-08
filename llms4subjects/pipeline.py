@@ -24,7 +24,14 @@ from typing import Mapping, Sequence
 from .artifacts import ArtifactStore, CachedEncoder
 from .config import RETRIEVER_NAMES, ExperimentConfig
 from .contracts import CandidateList, Code, Record, VocabularyEntry
-from .stages import encoders, fusion, indexes, label_text, retrievers
+from .stages import (
+    encoders,
+    fusion,
+    group_prior,
+    indexes,
+    label_text,
+    retrievers,
+)
 from .stages.encoders import Encoder
 
 # The retrievers that render the vocabulary. `knn` is not one of them: it
@@ -43,6 +50,7 @@ def predict(
     encoder: Encoder | None = None,
     name_qualifiers: Mapping[str, str] | None = None,
     translations: Mapping[str, str] | None = None,
+    prior: group_prior.GroupPrior | None = None,
 ) -> list[CandidateList]:
     """Rank vocabulary codes for each record.
 
@@ -52,8 +60,18 @@ def predict(
 
     `encoder` is for tests, which must not download model weights to assert an
     invariant that holds for any encoder. Left unset, the configured one is
-    loaded onto `device`.
+    loaded onto `device`. `prior` is the same for the group-prior head, which is
+    otherwise read from the artifact store.
     """
+    if config.group_prior.enabled and encoder is None:
+        # Loaded here rather than inside `retrieve` so the prior and the
+        # retrievers share one set of weights: the prior reads the same document
+        # vectors the retrievers do, and the cache serves them to whichever asks
+        # second.
+        from .hardware import select_device
+
+        encoder = encoders.load(config.encoder, select_device(device))
+
     per_retriever = retrieve(
         records,
         config,
@@ -67,8 +85,15 @@ def predict(
     )
     if not per_retriever:
         # An ablation that turns everything off is a row in the results table.
-        return [CandidateList(record.id, ()) for record in records]
-    return combine(per_retriever, config)
+        fused = [CandidateList(record.id, ()) for record in records]
+    else:
+        fused = combine(per_retriever, config)
+
+    if not config.group_prior.enabled:
+        return fused
+    return _boost(
+        records, fused, config, vocabulary, store, device, encoder, prior
+    )
 
 
 def retrieve(
@@ -115,6 +140,48 @@ def retrieve(
     }
 
 
+def _boost(
+    records: Sequence[Record],
+    fused: Sequence[CandidateList],
+    config: ExperimentConfig,
+    vocabulary: dict[str, VocabularyEntry],
+    store: ArtifactStore,
+    device: str,
+    encoder: Encoder | None,
+    prior: group_prior.GroupPrior | None,
+) -> list[CandidateList]:
+    """The fused candidates, reordered towards the groups the prior finds likely.
+
+    Applied after fusion and before reranking, so the prior adjusts candidate
+    scores rather than the candidate set: it cannot change the recall ceiling,
+    only which of those candidates the reranker and the submission see first.
+
+    The head is read from the artifact store unless one is handed in, for the
+    reason the translation cache is loaded rather than requested — a harness
+    that forgot it would score an unboosted run under a boosted config's name.
+    """
+    if prior is None:
+        from .artifacts import load_group_prior
+
+        prior = load_group_prior(store, config)
+
+    if encoder is None:
+        from .hardware import select_device
+
+        encoder = encoders.load(config.encoder, select_device(device))
+    cached = CachedEncoder(encoder, store, config)
+
+    # The same texts the retrievers embedded, so this is a cache hit on every
+    # run where any retriever is enabled.
+    vectors = cached.encode_documents([record.text for record in records])
+    return group_prior.apply_prior(
+        fused,
+        prior.distributions(vectors),
+        group_prior.group_of_code(vocabulary.values()),
+        config.group_prior,
+    )
+
+
 def _translations(
     config: ExperimentConfig,
     supplied: Mapping[str, str] | None,
@@ -155,8 +222,6 @@ def _refuse_unbuilt_stages(
     worse than slow: a flag that is silently ignored reports an ablation that
     never ran. Every refusal here is deleted by the ticket it names.
     """
-    if config.group_prior.enabled:
-        raise NotImplementedError("ticket 11: group prior")
     if config.reranker.enabled:
         raise NotImplementedError("ticket 12: cross-encoder reranking")
     if config.adjudication.enabled:

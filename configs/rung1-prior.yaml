@@ -1,0 +1,70 @@
+# Rung 1 with the subject-area group prior on top of the fused candidates
+# (ticket 11).
+#
+# One section apart from configs/rung1.yaml, so the pair is the ablation: the
+# retrievers, their tuned fusion weights and the index are identical, and the
+# only difference is whether the 66-way classification-group head reweights the
+# fused list. Fit the head before running it:
+#
+#   python scripts/train_group_prior.py configs/rung1-prior.yaml
+#   python scripts/run_experiment.py configs/rung1-prior.yaml
+#
+# The weight is the dev-swept value, from
+#
+#   python scripts/ablate_group_prior.py configs/rung1-prior.yaml
+#
+# selecting on micro R@10 over the 5,354 dev records: 0.4202 at 0.5 against
+# 0.4149 unboosted. The official macro figure peaks one step earlier, at 0.25,
+# and the two are 0.004 apart on the selection metric.
+name: rung1-prior-e5-base
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+group_prior:
+  enabled: true
+  # In units of a record's own candidate score range: at 1.0 a group the head
+  # is certain of moves a candidate across the whole list.
+  weight: 0.5
+  regularization: 1.0
+
+notes: >
+  The fused rung-1 candidates, reweighted by a 66-way head over the
+  classification groups. The head is a linear layer over the same document
+  vectors the retrievers read, trained on all 32,043 documents of the index
+  corpora rather than the 8,000 the index samples, and it boosts candidates in
+  likely groups rather than filtering unlikely ones — 23.3% of multi-label
+  records span three or more groups. Read against configs/rung1.yaml, which is
+  this file with the prior off.

@@ -578,3 +578,134 @@ def test_a_knn_only_run_reads_no_translation_cache(
 
     monkeypatch.setattr(corpus, "load_label_translations", refuse)
     run(queries, index_records, vocabulary, tmp_path)
+
+
+# --- The subject-area group prior -------------------------------------------
+
+
+PRIOR_ON = ALL_THREE + "\ngroup_prior: {enabled: true, weight: 1.0}\n"
+PRIOR_OFF_BY_WEIGHT = ALL_THREE + "\ngroup_prior: {enabled: true, weight: 0.0}\n"
+
+
+def fake_prior(vocabulary):
+    """A head with arbitrary weights, of the width the fake encoder emits.
+
+    The prior's own accuracy is a property of a trained classifier and belongs
+    to `tests/test_group_prior.py`; what the seam has to assert is what a boost
+    may do to a candidate list, which holds for any weights at all.
+    """
+    import numpy as np
+
+    from llms4subjects.stages.group_prior import GroupPrior, groups
+
+    names = groups(vocabulary.values())
+    rng = np.random.default_rng(11)
+    return GroupPrior(
+        groups=names,
+        coefficients=rng.normal(size=(len(names), corpus.DIMENSIONS)),
+        intercepts=np.zeros(len(names)),
+    )
+
+
+@pytest.fixture(scope="module")
+def boosted(queries, index_records, vocabulary, tmp_path_factory):
+    return run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path_factory.mktemp("boosted"),
+        extra=PRIOR_ON,
+        prior=fake_prior(vocabulary),
+    )
+
+
+def test_the_group_prior_reorders_and_removes_nothing(boosted, all_three):
+    """docs/spec.md story 29: a boost, so that a record whose labels span three
+    or more groups is not permanently lost. A stage that could drop a candidate
+    would be a filter wearing the word "boost"."""
+    for before, after in zip(all_three, boosted):
+        assert after.record_id == before.record_id
+        assert set(after.codes) == set(before.codes)
+
+
+def test_the_group_prior_keeps_the_candidate_count(boosted):
+    assert {len(result.candidates) for result in boosted} == {CANDIDATES}
+
+
+def test_the_group_prior_moves_the_ranking(boosted, all_three):
+    """Otherwise the flag reports an ablation of something nothing read."""
+    assert [r.codes for r in boosted] != [r.codes for r in all_three]
+
+
+def test_the_boosted_ranking_keeps_the_output_contract(boosted, vocabulary):
+    for result in boosted:
+        scores = [candidate.score for candidate in result.candidates]
+        assert scores == sorted(scores, reverse=True), result.record_id
+        assert len(set(result.codes)) == len(result.codes), result.record_id
+        assert not set(result.codes) - set(vocabulary), result.record_id
+        for candidate in result.candidates:
+            assert set(candidate.sources) <= {"knn", "dense", "lexical"}
+
+
+def test_a_zero_weight_prior_leaves_the_fused_ranking_alone(
+    queries, index_records, vocabulary, tmp_path, all_three
+):
+    """The row where the prior runs and contributes nothing, which is not the
+    same row as the prior being off."""
+    unboosted = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra=PRIOR_OFF_BY_WEIGHT,
+        prior=fake_prior(vocabulary),
+    )
+
+    assert [r.codes for r in unboosted] == [r.codes for r in all_three]
+
+
+def test_the_prior_reads_no_gold_label_of_the_record_it_boosts(
+    queries, index_records, vocabulary, tmp_path, fixture
+):
+    """The invariant the whole file exists for, through the new stage."""
+    perturbed = [
+        dataclasses.replace(
+            record, subjects=(fixture["unseen_code"],) + record.subjects[:1]
+        )
+        for record in queries
+    ]
+    prior = fake_prior(vocabulary)
+
+    before = run(queries, index_records, vocabulary, tmp_path / "before",
+                 extra=PRIOR_ON, prior=prior)
+    after = run(perturbed, index_records, vocabulary, tmp_path / "after",
+                extra=PRIOR_ON, prior=prior)
+
+    assert [r.codes for r in after] == [r.codes for r in before]
+
+
+def test_an_enabled_prior_with_no_fitted_head_refuses_rather_than_skipping(
+    queries, index_records, vocabulary, tmp_path
+):
+    """A silently skipped boost would be filed as a measurement of the boost."""
+    from llms4subjects.artifacts import MissingGroupPrior
+
+    with pytest.raises(MissingGroupPrior, match="train_group_prior"):
+        run(queries, index_records, vocabulary, tmp_path, extra=PRIOR_ON)
+
+
+def test_the_prior_survives_every_retriever_being_disabled(
+    queries, index_records, vocabulary, tmp_path, vocabulary_size
+):
+    """The all-off ablation reaches this stage with empty lists."""
+    results = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra="\nretrievers: {knn: {enabled: false}, dense: {enabled: false}, "
+        "lexical: {enabled: false}}\ngroup_prior: {enabled: true}\n",
+        prior=fake_prior(vocabulary),
+    )
+
+    assert all(result.candidates == () for result in results)

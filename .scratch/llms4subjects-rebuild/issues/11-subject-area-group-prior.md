@@ -17,10 +17,10 @@ out unlikely ones, so the 23.3% of records whose labels span three or more group
 
 **Blocked by:** 01, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A classifier predicts a distribution over the 66 classification groups for any document
-- [ ] Group predictions boost candidate scores and never remove candidates from the list
-- [ ] Group classifier accuracy is reported, including how often the true groups fall within the top two predicted
-- [ ] The prior is an ablation flag, and its contribution to dev Recall@10 is reported with and without
-- [ ] The band breakdown is reported with the prior enabled, to confirm it does not help the head at the tail's expense
+- [x] A classifier predicts a distribution over the 66 classification groups for any document
+- [x] Group predictions boost candidate scores and never remove candidates from the list
+- [x] Group classifier accuracy is reported, including how often the true groups fall within the top two predicted
+- [x] The prior is an ablation flag, and its contribution to dev Recall@10 is reported with and without
+- [x] The band breakdown is reported with the prior enabled, to confirm it does not help the head at the tail's expense

@@ -115,11 +115,35 @@ class FusionConfig:
 
 @dataclass(frozen=True)
 class GroupPriorConfig:
-    """66-way classifier over GND classification groups, used as a boost."""
+    """66-way classifier over GND classification groups, used as a boost.
+
+    There is no `model` here, and the absence is the design: the head is one
+    linear layer over the configured encoder's document vectors, so the model
+    is `encoder.name` and a second name would be a flag nobody could honour.
+
+    `weight` is in units of a record's own candidate score range — at 1.0 a
+    group the prior is certain of can move a candidate across the whole list —
+    so it is comparable between a fused run and a single-retriever one.
+    """
 
     enabled: bool = False
-    model: str | None = None
-    weight: float = 0.0
+    weight: float = 1.0
+    # Inverse L2 strength, passed to the per-group logistic regression as `C`.
+    regularization: float = 1.0
+
+    def __post_init__(self):
+        if self.weight < 0:
+            # A negative weight boosts the groups the prior finds *unlikely*,
+            # which is not an ablation of anything. Zero is: the prior runs,
+            # costs its training, and contributes nothing.
+            raise ConfigError(
+                f"group_prior.weight must not be negative, got {self.weight}"
+            )
+        if self.regularization <= 0:
+            raise ConfigError(
+                "group_prior.regularization must be positive, got "
+                f"{self.regularization}"
+            )
 
 
 @dataclass(frozen=True)

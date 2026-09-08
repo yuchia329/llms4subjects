@@ -141,6 +141,7 @@ A rung of the experiment ladder is a committed YAML file in
 | `configs/rung1-dense-german.yaml` | the same | the same, label text German-only |
 | `configs/rung1-lexical.yaml` | unread — BM25 over the labels' own strings | the lexical retriever alone |
 | `configs/rung1-lexical-german.yaml` | the same | the same, label text German-only |
+| `configs/rung1-prior.yaml` | the same 8,000 | plus the 66-way classification-group prior |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
 
@@ -149,6 +150,33 @@ unknown keys rather than ignoring them, because a misspelled ablation flag
 would otherwise read as "off" and the run would look like a measurement of
 something it is not. Ablations are new files, not edits: copy a rung, change
 one flag, keep both.
+
+### The group-prior head
+
+`group_prior.enabled` needs a fitted head, and the pipeline reads it from the
+artifact store rather than accepting one from the caller — a harness that forgot
+to pass it would score an unboosted run under a boosted config's name. Fit it
+first:
+
+    python scripts/train_group_prior.py configs/rung1-prior.yaml            # fit and score
+    python scripts/train_group_prior.py configs/rung1-prior.yaml --report    # score, write nothing
+    python scripts/train_group_prior.py configs/rung1-prior.yaml --force     # refit over an existing head
+
+It writes `artifacts/group_prior/<key>/head.npz` — the per-group coefficients,
+the intercepts and the group order they are in. Two arrays and a list of names
+rather than a pickled estimator, so the artifact outlives the scikit-learn
+version that fitted it, and a run months later reads it back.
+
+The key is the encoder, index and group-prior sections. The encoder is in it
+because the head is a linear layer over that encoder's document vectors and
+means nothing over another's. The whole group-prior section is in it, including
+the `weight` that only inference reads, because re-fitting is 11 s once the
+vectors are cached and a narrower key would be a second mechanism to maintain.
+Training reads every document of `index.corpora` and ignores `index.size`; see
+[results.md](results.md) for why that is worth 9.7 points of accuracy.
+
+An enabled prior with no fitted head raises `MissingGroupPrior` naming the
+command above, rather than quietly skipping the boost.
 
 ## The two environments
 
