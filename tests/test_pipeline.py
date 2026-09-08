@@ -307,19 +307,20 @@ def test_removing_any_single_retriever_changes_the_output(
     assert [r.codes for r in without] != [r.codes for r in all_three]
 
 
+@pytest.mark.parametrize("kept", RETRIEVER_NAMES)
 def test_fusion_does_not_reproduce_any_single_retrievers_ranking(
-    queries, index_records, vocabulary, tmp_path, all_three
+    queries, index_records, vocabulary, tmp_path, all_three, kept
 ):
-    for name in RETRIEVER_NAMES:
-        alone = run(
-            queries,
-            index_records,
-            vocabulary,
-            tmp_path / name,
-            extra=retrievers(off=tuple(o for o in RETRIEVER_NAMES if o != name)),
-        )
+    """Three retrievers combined, rather than one of them wearing three flags."""
+    alone = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra=retrievers(off=tuple(o for o in RETRIEVER_NAMES if o != kept)),
+    )
 
-        assert [r.codes for r in alone] != [r.codes for r in all_three], name
+    assert [r.codes for r in alone] != [r.codes for r in all_three]
 
 
 def test_the_fusion_weights_change_the_fused_ranking(

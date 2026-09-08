@@ -365,6 +365,11 @@ is the rest.
 Precision, micro: P@5 0.1492, P@10 0.0969 — above kNN's 0.1134 and 0.0739, so
 fusion is not buying recall by spending precision.
 
+A fused candidate carries the fused score and the rank each retriever gave it,
+not the retrievers' own scores: those are the three incomparable units fusion
+exists to avoid combining. A stage that needs one reads that retriever's own
+output through `pipeline.retrieve`, which is what the ablation harness does.
+
 **R@100 is the ceiling.** Candidate generation emits 100 codes per record and
 every later stage — reranking, the group prior, adjudication — can only reorder
 within them. 0.6242 micro is what those stages have to work with, and the
@@ -402,8 +407,9 @@ The two pairs containing kNN are close to each other (0.3434 and 0.3298) and bot
 far above the pair without it, which is the expected shape: 59.5% of dev gold
 assignments are head or torso, where document similarity is the strongest
 available signal. What is less expected is that `knn + lexical` edges out
-`dense + knn` at every k up to 50 — BM25 over label names contributes more to the
-neighbour harvest than the label tower does, at a fraction of the cost — and that
+`dense + knn` at every k including the ceiling — BM25 over label names contributes
+more to the neighbour harvest than the label tower does, at a fraction of the
+cost — and that
 the order reverses in the official aggregation (0.4239 against 0.4534), because
 the tower's gains land in the tiny cells that carry the official vote.
 
@@ -474,6 +480,13 @@ scaling of the weights, so holding one at 1.0 costs no coverage.
 | 1.00 | 1.50 | 1.00 | 30 | 0.3920 | 0.6225 |
 | 1.00 | 1.50 | 1.00 | 100 | 0.3904 | 0.6223 |
 
+The weights are selected on the same dev split this section reports, so the
+fused row carries a tuning advantage the single-retriever rows do not: they are
+untuned by construction, having nothing to fuse. +0.0942 is therefore an upper
+estimate of what fusion is worth, and the honest lower bound is the untuned
+equal-weight figure, +0.0682. Rung 2 retunes on the same split for the same
+reason, and the test split stays closed until ticket 17.
+
 Selection is micro R@10, as everywhere else in this document. The surface is
 flat: equal weights at `rrf_k` 60 score 0.3705, so tuning is worth +0.0259, and
 the top five combinations sit within 0.006 of each other. `rrf_k` moves the
@@ -515,9 +528,11 @@ beside the micro one and never instead of it.
 | | | | Report (502) | 0.4246 |
 | | | | Thesis (2,846) | 0.3601 |
 
-The German-to-English gap is +9.9 points, between kNN's +4.6 and the lexical
-retriever's +12.8, which is what fusing a strongly asymmetric retriever into two
-mildly asymmetric ones does. Label text is German-only at this rung, so it is
+The German-to-English gap is +9.9 points micro, against the lexical retriever's
++12.8 micro — the two aggregations disagree on the size of this gap, so the
+figures are quoted micro throughout and kNN's, which this document reports only
+in the official aggregation, is left out of the comparison rather than mixed
+into it. Label text is German-only at this rung, so it is
 still the largest single mismatch in the pipeline (ticket 08). Theses remain the
 weakest type and the second largest, at 0.3601 against Books' 0.4912.
 

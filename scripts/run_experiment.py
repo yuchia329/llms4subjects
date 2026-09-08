@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -36,13 +37,45 @@ from llms4subjects.corpus import (  # noqa: E402
 )
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.pipeline import predict  # noqa: E402
-from llms4subjects.stages.evaluator import evaluate, render  # noqa: E402
+from llms4subjects.stages.evaluator import OFFICIAL_KS, evaluate, render  # noqa: E402
 from llms4subjects.stages.submission import write_submission  # noqa: E402
 
 VOCABULARY = "tib-core"
 
 # The one split this script will not score. See ticket 17.
 FORBIDDEN_SPLIT = "core_test"
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """Everything a run needs from the dataset, loaded once.
+
+    `scripts/ablate_retrievers.py` imports `load_inputs` rather than repeating
+    it: the refusal to open the gold test split, the corpora an index is built
+    from and the `--limit` truncation are decisions this project makes in one
+    place, and a second harness that re-derived them could quietly disagree.
+    """
+
+    revision: str
+    vocabulary: dict
+    name_qualifiers: dict
+    records: list
+    index_records: list
+
+
+def load_inputs(config, split: str, limit: int | None = None) -> Inputs:
+    """The dataset a config asks for, or `MissingDataset` / `KeyError` saying why."""
+    revision = data_revision()
+    records = load_split(split)
+    return Inputs(
+        revision=revision,
+        vocabulary=load_vocabulary(VOCABULARY),
+        name_qualifiers=load_name_qualifiers(VOCABULARY),
+        records=records[:limit] if limit else records,
+        index_records=[
+            record for corpus in config.index.corpora for record in load_split(corpus)
+        ],
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,15 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_experiment(args.config)
 
     try:
-        revision = data_revision()
-        vocabulary = load_vocabulary(VOCABULARY)
-        name_qualifiers = load_name_qualifiers(VOCABULARY)
-        records = load_split(args.split)
-        index_records = [
-            record
-            for corpus in config.index.corpora
-            for record in load_split(corpus)
-        ]
+        inputs = load_inputs(config, args.split, args.limit)
     except MissingDataset as error:
         print(error)
         return 1
@@ -82,8 +107,11 @@ def main(argv: list[str] | None = None) -> int:
         print(error.args[0] if error.args else error)
         return 1
 
-    if args.limit:
-        records = records[: args.limit]
+    revision = inputs.revision
+    vocabulary = inputs.vocabulary
+    name_qualifiers = inputs.name_qualifiers
+    records = inputs.records
+    index_records = inputs.index_records
 
     device = select_device(args.device)
     print(f"experiment:    {config.name}  ({args.config})")
@@ -117,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
             "for fewer\n"
         )
 
+    # Scored past the submission's 50 as well, because candidate generation
+    # emits `fusion.candidates` and recall there is the ceiling every later
+    # stage — reranking, adjudication — can only rank within.
+    ceiling = config.fusion.candidates
     report = evaluate(
         gold={record.id: record.subjects for record in records},
         predictions={
@@ -124,8 +156,16 @@ def main(argv: list[str] | None = None) -> int:
         },
         bands=frequency_bands(),
         cells={record.id: (record.type, record.lang) for record in records},
+        ks=tuple(OFFICIAL_KS) + (ceiling,),
     )
-    print(render(report))
+    print(render(report, ks=OFFICIAL_KS))
+    print(f"\ncandidate ceiling at {ceiling}: "
+          f"micro R@{ceiling} {report.micro.recall(ceiling):.4f}, "
+          f"official R@{ceiling} {report.official_macro.recall(ceiling):.4f}")
+    print("  by band  " + "  ".join(
+        f"{band} {metrics.recall(ceiling):.4f}"
+        for band, metrics in report.by_band.items()
+    ))
 
     if args.submission:
         if short:

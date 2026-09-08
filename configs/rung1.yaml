@@ -1,6 +1,16 @@
 # Rung 1 of the experiment ladder (docs/spec.md, "The experiment ladder"):
 # 8,000 documents stratified by record type and language, off-the-shelf
 # encoders, Apple Silicon. Swap `encoder.name` to screen each of the four.
+#
+# All three retrievers, fused by reciprocal rank. The weights and `rrf_k` below
+# are the dev-tuned values, from
+#
+#   python scripts/ablate_retrievers.py configs/rung1.yaml --tune-weights
+#
+# selecting on micro R@10 over the 5,354 dev records: 0.3964 tuned against
+# 0.3705 at the equal weights this file used to carry. Retuning is one command
+# and is expected whenever the encoder changes, since the weights are a
+# statement about three retrievers' relative strengths under one encoder.
 name: rung1-e5-base
 
 encoder:
@@ -24,7 +34,9 @@ retrievers:
     enabled: true
     neighbours: 20
     top_k: 100
-    weight: 1.0
+    # The strongest of the three on its own (micro R@10 0.3023 against 0.1558
+    # and 0.1224), and the tuning agrees: 1.5 against the other two at 1.0.
+    weight: 1.5
   dense:
     enabled: true
     top_k: 100
@@ -35,9 +47,14 @@ retrievers:
     weight: 1.0
 
 fusion:
+  # Candidate generation emits this many per record with provenance; the
+  # submission takes the top 50 and the rest are the reranker's input.
   candidates: 100
+  # Swept over 10, 30, 60 and 100 with the weights; 60 wins, and the four are
+  # within 0.015 of each other, so this is the flattest of the fusion knobs.
   rrf_k: 60
 
 notes: >
-  Screening rung. Reranking, group prior and adjudication stay off so that
-  retriever recall is measured on its own.
+  Screening rung, and the first fused one: three retrievers into one candidate
+  list of 100 by weighted reciprocal rank fusion. Reranking, group prior and
+  adjudication stay off so that retriever recall is measured on its own.

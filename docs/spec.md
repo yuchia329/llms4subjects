@@ -270,7 +270,7 @@ one call. Everything below it — indexing, the three retrievers, fusion, the gr
 reranking, adjudication — is an implementation detail reachable only through configuration.
 Tests run it over a small committed fixture corpus and assert contract invariants:
 
-- exactly 50 codes returned per record, in non-increasing score order
+- the configured candidate count returned per record — 100, of which the submission writer takes the top 50 (ticket 07 moved this line: `predict` returns the whole candidate set with its provenance, because the reranker and the recall ceiling both read past 50) — in non-increasing score order
 - no duplicate codes within a record
 - every returned code exists in the tib-core vocabulary
 - disabling a retriever changes the output; disabling all of them yields empty results rather than a crash
