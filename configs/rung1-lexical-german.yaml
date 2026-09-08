@@ -1,0 +1,44 @@
+# configs/rung1-lexical.yaml with the label text German-only (ticket 08).
+#
+# The other half of the translation ablation, on the retriever with the largest
+# language asymmetry to close: a label's own name or a synonym appears verbatim
+# in the record text for 53.7% of German gold assignments against 23.0% of
+# English ones. Under `bilingual: true` each label's English name is one more
+# surface string BM25 can match, so an English document can match a heading
+# verbatim without the heading being German.
+name: rung1-lexical-bm25-german
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: false
+
+retrievers:
+  knn:
+    enabled: false
+  dense:
+    enabled: false
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Verbatim heading matching against German names and synonyms only, which is
+  what configs/rung1-lexical.yaml measured before translation existed. Read
+  against that file's English slice.

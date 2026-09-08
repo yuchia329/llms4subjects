@@ -25,6 +25,9 @@ index:
 label_text:
   qualifiers: parenthetical
   include_definition: false
+  # Each label's English name is one more surface string BM25 can match, beside
+  # its German name and its synonyms. configs/rung1-lexical-german.yaml is the
+  # ablation without it.
   bilingual: true
 
 retrievers:

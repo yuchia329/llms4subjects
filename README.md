@@ -35,7 +35,8 @@ baseline/               the rejected classifier, kept runnable as a results row
 configs/                one committed YAML per rung of the experiment ladder
 reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
-scripts/                run_experiment.py, the fixture and band freeze commands
+scripts/                run_experiment.py, ablate_retrievers.py, the fixture
+                        and band freeze commands
 tests/                  contract and invariant tests
 ```
 
@@ -63,6 +64,7 @@ dataset is rebuilt there rather than copied, and how adapters come back.
 ```
 python -m llms4subjects configs/rung2.yaml            # resolve a config: keys, device, cache hits
 python scripts/run_experiment.py configs/rung1-knn.yaml   # predict dev and score it
+python scripts/translate_labels.py --report           # translation cache coverage
 pytest                                                # contract and invariant tests
 ```
 
@@ -161,7 +163,7 @@ The retrievers are three, behind one interface:
 |---|---|---|
 | `knn` | subjects of the nearest indexed documents | labels some indexed record carries |
 | `dense` | the document scored against all 79,427 label vectors | any label, seen or not |
-| `lexical` | label strings matched against the document text (ticket 06) | verbatim headings |
+| `lexical` | label strings matched against the document text | verbatim headings |
 
 A code's kNN score is the summed similarity of the neighbours carrying it, so
 two close documents agreeing on a subject outrank one document mentioning it.
@@ -177,12 +179,64 @@ vocabulary entry as field-marked text, embeds all 79,427 of them, and scores the
 document against the whole tower, so a label is reachable by having a name
 rather than by having a training example. That is not a marginal gain: 8.5% of
 dev gold assignments are carried by no training record at all, and `rung1-knn`
-scores 0.0000 on them at every k by construction. Label text is German-only
-until ticket 08 adds the translation, `Definition` is off by default and
-available as an ablation (`label_text.include_definition`), and `Related
-Subjects` are not part of the text at all — see "Vocabulary and qualifier
-rendering" above and [docs/results.md](docs/results.md) for what each choice
-measures.
+scores 0.0000 on them at every k by construction. Label text is bilingual by
+default (see below), `Definition` is off by default and available as an ablation
+(`label_text.include_definition`), and `Related Subjects` are not part of the
+text at all — see "Vocabulary and qualifier rendering" above and
+[docs/results.md](docs/results.md) for what each choice measures.
+
+## Bilingual label text
+
+Every one of the 79,427 vocabulary entries is German, and 58.7% of gold label
+assignments belong to English documents, so matching a document against a label
+name is a cross-lingual task for most of the benchmark. The two retrievers that
+read label text render it in both languages:
+
+```
+Fachgebiet: Theoretische und Physikalische Chemie / Theoretical and Physical Chemistry
+Schlagwort: Polymere / Polymers
+Synonyme: Makropolymere; Hochpolymere; Polymer
+```
+
+The English is looked up, never produced: `reference/label_translations.json`
+holds all 79,224 distinct German strings the renderer can ask about, translated
+once by `python scripts/translate_labels.py` and committed. A run reads a dict,
+and no module on the rendering path can import a translation model, so the
+second language costs indexing and evaluation nothing. Synonyms stay German —
+they are alternate surface forms of a name whose English is on the line above.
+
+`label_text.bilingual: false` renders German-only and reads no cache at all,
+which is the ablation the results document reports separately for German and
+English documents. For the lexical retriever the same flag adds each label's
+English name as one more surface string to match rather than joining it to the
+German one, because a lexical match is against a whole string.
+
+Two senses of one word share one entry: the cache is keyed by German string
+rather than by GND code, so `Interaktion,Naturwissenschaft` and
+`Interaktion,Soziologie` share the translation of `Interaktion` and differ in
+the translated qualifier, which is what keeps the homograph distinction the
+vocabulary rebuild recovered. See [docs/artifacts.md](docs/artifacts.md).
+
+The three are combined by **reciprocal rank fusion**: a code's fused score is
+the sum over the retrievers that found it of `weight / (rrf_k + rank)`. Rank and
+not score, because the three score in incomparable units — a summed cosine
+similarity over neighbouring documents, a single cosine similarity against a
+label vector, a BM25 score — and fusing the numbers themselves would hand the
+ranking to whichever unit happens to be largest. `rrf_k` is what a rank is worth
+against agreement between retrievers, and the weights are tuned on dev and
+committed to the config so that no retriever's influence is an accident.
+
+Every surviving candidate keeps the rank each retriever gave it, so a prediction
+can be attributed to the component that found it. Candidate generation emits the
+top `fusion.candidates` — 100 — of which the submission takes the top 50; the
+rest are what the reranker reads and what the recall ceiling is measured at.
+
+`scripts/ablate_retrievers.py` prints the per-retriever ablation table: every
+retriever alone, every pair and all three, with band-level recall for each. The
+retrievers run once and each row fuses a subset of that one pass, so seven rows
+cost one pass over the index. `--tune-weights` sweeps the weights and `rrf_k` on
+dev and prints the block to paste into a config. See
+[docs/results.md](docs/results.md) for what the table says.
 
 Predictions are restricted to the tib-core vocabulary whatever the index holds,
 which is what keeps a rung-3 all-subjects index from widening the label

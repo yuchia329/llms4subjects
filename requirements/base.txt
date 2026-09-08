@@ -20,6 +20,11 @@ sentence-transformers==3.3.1
 scikit-learn==1.5.2
 scipy==1.14.1
 
+# Translation. Read by `scripts/translate_labels.py` alone, which writes
+# reference/label_translations.json once; the pipeline looks translations up and
+# never loads a translation model, so no run imports this.
+sentencepiece==0.2.0
+
 # Retrieval
 faiss-cpu==1.9.0.post1
 rank-bm25==0.2.2

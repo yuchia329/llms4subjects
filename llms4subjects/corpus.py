@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 from .contracts import Code, Record, VocabularyEntry
 from .paths import (
     FREQUENCY_BANDS_FILE,
+    LABEL_TRANSLATIONS_FILE,
     NAME_QUALIFIER_FILES,
     SPLIT_FILES,
     VOCABULARY_FILES,
@@ -69,6 +70,30 @@ def load_name_qualifiers(
         return {}
     with _open(source) as handle:
         return json.load(handle)
+
+
+class MissingTranslations(FileNotFoundError):
+    """`bilingual` is on and the translation cache is not there."""
+
+
+def load_label_translations(path: str | Path | None = None) -> dict[str, str]:
+    """The frozen German-string to English-string map, without its provenance.
+
+    Callers get the mapping alone: which model produced it is recorded in the
+    file and read by nobody, which is what "independent of the translating
+    model" means in practice. An absent file raises rather than returning an
+    empty map — an empty map renders German-only, which is the other half of the
+    ablation, and a bilingual run that quietly produced the German-only numbers
+    would be reported as "translation does not help".
+    """
+    source = Path(path) if path is not None else LABEL_TRANSLATIONS_FILE
+    if not source.exists():
+        raise MissingTranslations(
+            f"{source} is missing, and `label_text.bilingual` needs it. Write it "
+            "with:\n  python scripts/translate_labels.py"
+        )
+    with _open(source) as handle:
+        return json.load(handle)["translations"]
 
 
 # The band a label falls in when the frozen reference does not name it: it was

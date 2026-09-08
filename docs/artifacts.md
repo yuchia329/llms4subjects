@@ -73,14 +73,20 @@ To see what a run will read and write before it starts:
 ## Frozen reference artifacts
 
 `reference/` is the opposite of `artifacts/`: small, tracked, and never written
-as a side effect of a run. It holds `frequency_bands.json`, the label frequency
-band assignment frozen against tib-core train counts.
+as a side effect of a run. It holds two files:
+
+| file | what it is | written by |
+|---|---|---|
+| `frequency_bands.json` | the label frequency band assignment, frozen against tib-core train counts | `scripts/freeze_bands.py --force` |
+| `label_translations.json` | English for all 79,224 distinct German label strings | `scripts/translate_labels.py` |
 
 The distinction is the point. A cached artifact is a saved computation and can
 be deleted at any time; a frozen reference is a *decision*, and recomputing it
-would change the meaning of every results table that cites it. Only
-`scripts/freeze_bands.py --force` writes it, so a change of reference leaves a
-commit rather than happening as a by-product of adding data to the index:
+would change the meaning of every results table that cites it. Nothing but the
+script in the right-hand column writes either file, so a change of reference
+leaves a commit rather than happening as a by-product of a run.
+
+For the bands, that by-product would be adding data to the index:
 
     python scripts/freeze_bands.py            # report the bands, refuse to overwrite
     python scripts/freeze_bands.py --force    # rewrite the reference
@@ -88,6 +94,35 @@ commit rather than happening as a by-product of adding data to the index:
 `scripts/build_eval_fixture.py --force` is the same shape for the committed
 evaluation fixture in `tests/fixtures/`, which pins the local evaluator to the
 organizers' scorer.
+
+### The translation cache
+
+All 79,427 vocabulary entries are German and 58.7% of gold label assignments
+belong to English documents, so `label_text.bilingual` renders each label's
+preferred name and classification group in both languages. The English comes
+from `reference/label_translations.json`, and the point of committing it is that
+**translation costs a run nothing**: the pipeline looks strings up in a dict,
+and no module on the rendering path can even import a translation model —
+`tests/test_label_translations.py` asserts that against the source.
+
+    python scripts/translate_labels.py --report   # coverage, writes nothing
+    python scripts/translate_labels.py            # translate whatever is missing
+    python scripts/translate_labels.py --force    # re-translate every string
+
+It is a German-string to English-string map rather than a code-to-name one, so
+the two senses of `Interaktion` share one translation of the word they have in
+common while keeping the qualifier that tells them apart, and 79,427 entries
+reduce to 79,224 strings. Which strings the cache must cover is
+`label_text.translatable`, decided by the module that renders them rather than
+by the script that fills them.
+
+The default run translates only what is missing and writes keys sorted, so a
+second run is a no-op and produces a byte-identical file. `produced_by` records
+the model — `Helsinki-NLP/opus-mt-de-en`, 2020, inside the declared cutoff — and
+nothing reads it: the cache is an input to the pipeline, not a dependency on the
+model that wrote it. Filling it from scratch takes about two minutes on the M4
+Pro, and `sentencepiece` in `requirements/base.txt` is there for this script
+alone.
 
 `artifacts/` is ignored by git, along with the dataset itself
 (`TIBKAT_dataset/*.csv`, `GND_dataset/*.json`) and the sparse clone the rebuild
@@ -103,6 +138,9 @@ A rung of the experiment ladder is a committed YAML file in
 | `configs/rung1.yaml` | 8,000 documents, stratified | off-the-shelf encoder |
 | `configs/rung1-knn.yaml` | the same 8,000 | the neighbour retriever alone |
 | `configs/rung1-dense.yaml` | unread — the label tower scores the vocabulary | the dense label retriever alone |
+| `configs/rung1-dense-german.yaml` | the same | the same, label text German-only |
+| `configs/rung1-lexical.yaml` | unread — BM25 over the labels' own strings | the lexical retriever alone |
+| `configs/rung1-lexical-german.yaml` | the same | the same, label text German-only |
 | `configs/rung2.yaml` | 32,043 documents (tib-core train) | off-the-shelf encoder |
 | `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
 

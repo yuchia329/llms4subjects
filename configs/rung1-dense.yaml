@@ -25,12 +25,10 @@ index:
 label_text:
   qualifiers: parenthetical
   include_definition: false
-  # Nothing reads this flag yet, so the rendering is German-only whatever it
-  # says here; ticket 08 makes it load-bearing and turns this row into the
-  # bilingual half of that ablation. It is `true` because the loader refuses
-  # `false` rather than scoring it identically to the default (see
-  # `_refuse_unbuilt_stages`), which is the opposite of what the word means and
-  # is why the refusal exists.
+  # Each label's name and classification group rendered in German and English,
+  # from reference/label_translations.json. This is the bilingual half of the
+  # ticket-08 ablation; configs/rung1-dense-german.yaml is the other half, and
+  # the pair is the whole measurement of what translation is worth here.
   bilingual: true
 
 retrievers:
@@ -49,6 +47,8 @@ fusion:
 
 notes: >
   The label tower on its own: every vocabulary entry rendered field-marked and
-  German-only, scored against the document. Success is the first non-zero
+  bilingual, scored against the document. Success is the first non-zero
   zero-shot recall in this project, not the aggregate figure — a tower that
-  reaches unseen labels at all is what fusion has to work with.
+  reaches unseen labels at all is what fusion has to work with. Read the
+  language slices against configs/rung1-dense-german.yaml for the translation
+  ablation.

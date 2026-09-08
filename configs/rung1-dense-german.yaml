@@ -1,0 +1,49 @@
+# configs/rung1-dense.yaml with the label text German-only (ticket 08).
+#
+# One flag apart from that file, and the flag is the whole measurement: all
+# 79,427 vocabulary entries are German, 58.7% of gold label assignments belong
+# to English documents, and this pair says what the second language is worth to
+# a mechanism that matches a document against a label name.
+#
+# This is also the row that reproduces the `rung1-dense` figures measured before
+# translation existed, when `bilingual` was a flag nothing read. If it does not,
+# something other than the label text changed between the two.
+name: rung1-dense-e5-base-german
+
+encoder:
+  name: intfloat/multilingual-e5-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  corpora: [core_train]
+  size: 8000
+  stratify: true
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  # The ablation. Nothing reads reference/label_translations.json under this
+  # setting, so the run works on a checkout that has never translated anything.
+  bilingual: false
+
+retrievers:
+  knn:
+    enabled: false
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: false
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  The label tower against German-only label text, which is what every rung
+  before ticket 08 measured. Read against configs/rung1-dense.yaml, and read the
+  language slices rather than the aggregate: translation is aimed at the English
+  half and cannot move the German one.

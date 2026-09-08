@@ -17,11 +17,11 @@ import pipeline_fixture as corpus
 import pytest
 
 from llms4subjects.artifacts import ArtifactStore
-from llms4subjects.config import load_experiment_text
+from llms4subjects.config import FusionConfig, load_experiment_text
 from llms4subjects.contracts import CODES_PER_RECORD
 from llms4subjects.pipeline import predict
 
-# kNN only. One retriever at a time: fusing two arrives with ticket 07.
+# kNN only, which is the base every other configuration below varies from.
 KNN_ONLY = """
 name: fixture-knn
 encoder: {name: fixture/fake}
@@ -31,6 +31,38 @@ retrievers:
   dense: {enabled: false}
   lexical: {enabled: false}
 """
+
+
+# What candidate generation emits per record, which is what the reranker and
+# the recall ceiling are measured over. The submission takes the top 50 of it.
+CANDIDATES = FusionConfig().candidates
+
+
+RETRIEVER_NAMES = ("knn", "dense", "lexical")
+
+
+def retrievers(off: tuple[str, ...] = (), weights: dict[str, float] | None = None) -> str:
+    """A complete `retrievers:` block with everything but `off` enabled.
+
+    Written out in full rather than as an override of the block above, because
+    the loader fills every retriever it is not told about with its defaults:
+    naming only the one being turned off would also move kNN's `neighbours`
+    from 5 back to 20, and an ablation that changes two things measures neither.
+    """
+    weights = weights or {}
+    lines = ["", "retrievers:"]
+    for name in RETRIEVER_NAMES:
+        settings = [f"enabled: {str(name not in off).lower()}", "top_k: 100"]
+        if name == "knn":
+            settings.append("neighbours: 5")
+        settings.append(f"weight: {weights.get(name, 1.0)}")
+        lines.append(f"  {name}: {{{', '.join(settings)}}}")
+    return "\n".join(lines) + "\n"
+
+
+# All three retrievers, fused: the rung-1 configuration, and the one every
+# ablation below removes something from.
+ALL_THREE = retrievers()
 
 
 # The dense retriever alone, which is the only configuration that can return a
@@ -73,7 +105,9 @@ def vocabulary_size(vocabulary):
     return len(vocabulary)
 
 
-def run(queries, index_records, vocabulary, tmp_path, extra="", encoder=None):
+def run(
+    queries, index_records, vocabulary, tmp_path, extra="", encoder=None, **kwargs
+):
     store = ArtifactStore(tmp_path / "artifacts", data_revision="fixture")
     return predict(
         queries,
@@ -82,6 +116,7 @@ def run(queries, index_records, vocabulary, tmp_path, extra="", encoder=None):
         index_records,
         store,
         encoder=encoder or corpus.FakeEncoder(),
+        **kwargs,
     )
 
 
@@ -99,9 +134,17 @@ def test_one_candidate_list_per_record_in_the_order_given(candidates, queries):
     assert [result.record_id for result in candidates] == [r.id for r in queries]
 
 
-def test_exactly_fifty_codes_per_record(candidates):
-    """The submission format takes 50 and has no representation for fewer."""
-    assert {len(result.candidates) for result in candidates} == {CODES_PER_RECORD}
+def test_enough_codes_per_record_to_fill_a_submission(candidates):
+    """Candidate generation emits up to 100; the submission takes the top 50.
+
+    Not exactly 100 here: this is one retriever whose candidates are then cut to
+    the tib-core vocabulary, so the ceiling is what the index can reach. What
+    must hold is the floor — the submission format has no representation for
+    fewer than 50 codes.
+    """
+    lengths = {len(result.candidates) for result in candidates}
+    assert min(lengths) >= CODES_PER_RECORD
+    assert max(lengths) <= CANDIDATES
 
 
 def test_scores_are_non_increasing(candidates):
@@ -205,37 +248,168 @@ def test_disabling_the_only_retriever_changes_the_output(
     assert [r.codes for r in off] != [r.codes for r in candidates]
 
 
-@pytest.mark.parametrize("name", ["dense", "lexical"])
-def test_combining_two_retrievers_says_what_is_missing(
-    queries, index_records, vocabulary, tmp_path, name
-):
-    """All three retrievers exist; fusing them arrives with ticket 07.
+# --- Fusion -----------------------------------------------------------------
 
-    Silently ranking by one retriever's scores, or by whichever ran last, would
-    report a fused ablation that never fused anything.
+
+@pytest.fixture(scope="module")
+def all_three(queries, index_records, vocabulary, tmp_path_factory):
+    return run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path_factory.mktemp("fused"),
+        extra=ALL_THREE,
+    )
+
+
+def test_fusion_emits_the_configured_hundred_candidates_per_record(all_three):
+    """The pipeline contract: candidate generation emits the top 100."""
+    assert {len(result.candidates) for result in all_three} == {CANDIDATES}
+
+
+def test_fused_candidates_keep_the_contract_the_single_retrievers_keep(
+    all_three, queries, vocabulary
+):
+    assert [result.record_id for result in all_three] == [r.id for r in queries]
+    for result in all_three:
+        scores = [candidate.score for candidate in result.candidates]
+        assert scores == sorted(scores, reverse=True), result.record_id
+        assert len(set(result.codes)) == len(result.codes), result.record_id
+        assert not set(result.codes) - set(vocabulary), result.record_id
+
+
+def test_a_fused_candidate_names_every_retriever_that_proposed_it(all_three):
+    """Attribution is the point: a fused list that forgets its sources is useless."""
+    agreed = 0
+    for result in all_three:
+        for candidate in result.candidates:
+            assert set(candidate.sources) <= {"knn", "dense", "lexical"}
+            assert candidate.sources
+            assert all(rank >= 0 for rank in candidate.sources.values())
+            agreed += len(candidate.sources) > 1
+
+    assert agreed, "no candidate was proposed by more than one retriever"
+
+
+@pytest.mark.parametrize("removed", ["knn", "dense", "lexical"])
+def test_removing_any_single_retriever_changes_the_output(
+    queries, index_records, vocabulary, tmp_path, all_three, removed
+):
+    """Otherwise a retriever is carrying no weight and the ablation would not say so."""
+    without = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra=retrievers(off=(removed,)),
+    )
+
+    assert [r.codes for r in without] != [r.codes for r in all_three]
+
+
+def test_fusion_does_not_reproduce_any_single_retrievers_ranking(
+    queries, index_records, vocabulary, tmp_path, all_three
+):
+    for name in RETRIEVER_NAMES:
+        alone = run(
+            queries,
+            index_records,
+            vocabulary,
+            tmp_path / name,
+            extra=retrievers(off=tuple(o for o in RETRIEVER_NAMES if o != name)),
+        )
+
+        assert [r.codes for r in alone] != [r.codes for r in all_three], name
+
+
+def test_the_fusion_weights_change_the_fused_ranking(
+    queries, index_records, vocabulary, tmp_path, all_three
+):
+    """Weights are tuned on dev, so a weight nothing reads would be a silent default."""
+    reweighted = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra=retrievers(weights={"dense": 9.0}),
+    )
+
+    assert [r.codes for r in reweighted] != [r.codes for r in all_three]
+
+
+def test_rrf_k_changes_what_a_rank_is_worth(
+    queries, index_records, vocabulary, tmp_path, all_three
+):
+    steep = run(
+        queries,
+        index_records,
+        vocabulary,
+        tmp_path,
+        extra=ALL_THREE + "\nfusion: {rrf_k: 0}\n",
+    )
+
+    assert [r.codes for r in steep] != [r.codes for r in all_three]
+
+
+# --- Bilingual label text ---------------------------------------------------
+
+
+GERMAN_ONLY = DENSE_ONLY + "\nlabel_text: {bilingual: false}\n"
+
+
+def test_the_bilingual_flag_moves_the_candidates(
+    queries, index_records, vocabulary, tmp_path_factory
+):
+    """The ablation is a real one, which is what the ticket-08 refusal held out for.
+
+    `bilingual: false` renders the same vocabulary German-only, so a difference
+    here is the second language reaching the label tower and nothing else. If
+    these two ever agreed, every "translation does not help" row in the results
+    would be a report on a flag nobody read.
     """
-    with pytest.raises(NotImplementedError, match="ticket 07"):
-        run(
-            queries,
-            index_records,
-            vocabulary,
-            tmp_path,
-            extra=f"\nretrievers: {{{name}: {{enabled: true}}}}\n",
-        )
+    german = run(
+        queries, index_records, vocabulary, tmp_path_factory.mktemp("de"),
+        extra=GERMAN_ONLY,
+    )
+    both = run(
+        queries, index_records, vocabulary, tmp_path_factory.mktemp("both"),
+        extra=DENSE_ONLY,
+    )
+    assert [result.codes for result in german] != [result.codes for result in both]
 
 
-def test_a_flag_nothing_reads_yet_is_refused(
-    queries, index_records, vocabulary, tmp_path
+def test_german_only_reads_no_translation_cache(
+    queries, index_records, vocabulary, tmp_path_factory, monkeypatch
 ):
-    """`bilingual: false` would otherwise score exactly like the default."""
-    with pytest.raises(NotImplementedError, match="ticket 08"):
-        run(
-            queries,
-            index_records,
-            vocabulary,
-            tmp_path,
-            extra="\nlabel_text: {bilingual: false}\n",
-        )
+    """The ablation must run on a checkout that has no cache to read."""
+    import llms4subjects.corpus as corpus
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("German-only rendering loaded the translation cache")
+
+    monkeypatch.setattr(corpus, "load_label_translations", refuse)
+    run(
+        queries, index_records, vocabulary, tmp_path_factory.mktemp("no-cache"),
+        extra=GERMAN_ONLY,
+    )
+
+
+def test_translations_given_explicitly_are_the_ones_used(
+    queries, index_records, vocabulary, tmp_path_factory, monkeypatch
+):
+    """A caller with its own cache does not also pay for the frozen one."""
+    import llms4subjects.corpus as corpus
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("an explicit translation map did not stop the load")
+
+    monkeypatch.setattr(corpus, "load_label_translations", refuse)
+    supplied = run(
+        queries, index_records, vocabulary, tmp_path_factory.mktemp("supplied"),
+        extra=DENSE_ONLY,
+        translations={entry.name: f"{entry.name} translated" for entry in vocabulary.values()},
+    )
+    assert [result.record_id for result in supplied] == [r.id for r in queries]
 
 
 # --- The dense label tower --------------------------------------------------
@@ -254,7 +428,7 @@ def dense(queries, index_records, vocabulary, tmp_path_factory):
 
 def test_the_dense_retriever_fills_the_output_contract(dense, queries):
     assert [result.record_id for result in dense] == [r.id for r in queries]
-    assert {len(result.candidates) for result in dense} == {CODES_PER_RECORD}
+    assert {len(result.candidates) for result in dense} == {CANDIDATES}
     for result in dense:
         scores = [candidate.score for candidate in result.candidates]
         assert scores == sorted(scores, reverse=True), result.record_id
@@ -390,3 +564,16 @@ def test_a_different_encoder_is_not_served_the_cached_vectors(
     )
 
     assert second.encoded == len(queries) + len(index_records)
+
+
+def test_a_knn_only_run_reads_no_translation_cache(
+    queries, index_records, vocabulary, tmp_path, monkeypatch
+):
+    """The neighbour harvest renders no label, so no label-text flag reaches it."""
+    import llms4subjects.corpus as corpus
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a kNN-only run loaded the translation cache")
+
+    monkeypatch.setattr(corpus, "load_label_translations", refuse)
+    run(queries, index_records, vocabulary, tmp_path)

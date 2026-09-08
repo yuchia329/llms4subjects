@@ -19,6 +19,7 @@ opened once, at the end of the project (ticket 17).
 | `rung1-knn` | 8,000 stratified | kNN only | **0.3023** | 0.3948 | 0.4495 |
 | `rung1-dense` | none read | dense label tower only | **0.1224** | 0.1260 | 0.2110 |
 | `rung1-lexical` | none read | lexical label matching only | **0.1558** | 0.1416 | 0.2532 |
+| `rung1` (fused) | 8,000 stratified | all three, RRF | **0.3964** | 0.5340 | 0.5568 |
 | `baseline` (rejected) | — | none: a 14,607-way dense classifier | **0.0667** | 0.1623 | 0.1518 |
 
 The three rung-1 rows are not competing. They are three mechanisms reaching
@@ -110,11 +111,18 @@ and `en` and then indexes by directory name.
 
 ## rung1-dense — the label tower alone
 
-    python scripts/run_experiment.py configs/rung1-dense.yaml
+    python scripts/run_experiment.py configs/rung1-dense-german.yaml
 
 `intfloat/multilingual-e5-base`, every one of the 79,427 tib-core vocabulary
 entries rendered field-marked and German-only, embedded, and scored against the
-document. No index at all: the document index is what a neighbour harvest reads,
+document.
+
+The command above names the *German-only* config because ticket 08 made
+`label_text.bilingual` load-bearing and `configs/rung1-dense.yaml` renders both
+languages now. Every figure in this section is unchanged by that: the ablation
+run reproduces them to four decimals, which is how the flag was shown to be the
+only thing the translation changed. The bilingual numbers are in "rung1 —
+translated label names" below. No index at all: the document index is what a neighbour harvest reads,
 and this mechanism does not read one. 5,354 dev records in 136.5s on the M4 Pro
 cold and 6.9s warm: the difference is encoding the 79,427 label texts once. The
 tower is cached by encoder and label-text revision, so it is spent again only
@@ -172,11 +180,9 @@ German beats English by 5.8 points where kNN's gap was 4.6, and by half again as
 much in relative terms — German is 52% ahead here against 14% there. Label text
 is German-only at this rung, so an English document is matched against German
 label names, and this is the measurement ticket 08's translation is aimed at.
-(`label_text.bilingual` reads `true` in every committed config and nothing reads
-it yet — the flag becomes load-bearing in ticket 08, and until then the rendering
-is German whatever the config says. The loader refuses `false` for exactly that
-reason: it would otherwise score identically to the default and be reported as
-"translation does not help".)
+It hits: translation lifts the English slice to 0.1090 and the German one falls
+further, for a net loss on this retriever — see "rung1 — translated label names"
+below, which is where that asymmetry is resolved rather than predicted.
 
 Articles collapse to 0.0081 from kNN's 0.8780. There are 54 Article assignments
 in dev and their gold subjects are head-heavy, so this is the head weakness
@@ -203,7 +209,11 @@ and model selection stays on the micro figure for that reason.
 
 ## rung1-lexical — verbatim label matching alone
 
-    python scripts/run_experiment.py configs/rung1-lexical.yaml
+    python scripts/run_experiment.py configs/rung1-lexical-german.yaml
+
+Named as the German-only config for the same reason as the section above:
+`configs/rung1-lexical.yaml` matches against English label names too as of
+ticket 08. This section's figures are the German-only ones and are unchanged.
 
 BM25 over the vocabulary's own surface strings: each label's preferred name and
 each of its synonyms is one indexed string, 150,984 strings for 79,427 labels,
@@ -257,13 +267,16 @@ points), the label tower 0.1701 against 0.1118 (+5.8), lexical 0.2719 against
 points the same way in all three, because the label text is German-only at every
 rung until ticket 08 translates it. English documents carry 58.7% of gold
 assignments, so this is the largest single mismatch in the pipeline and the
-strongest available case for translating label names.
+strongest available case for translating label names — measured below.
 
 The two aggregations disagree on the *size* of this gap and not its direction —
 +12.8 points micro against +15.9 official — which is why the micro block is the
 one quoted above: two of the 22 cells hold eight records between them and carry
 31% of the official figure, so the official language rows move on whether one
 Chinese-language book happens to match.
+
+Translating the label names closes most of this gap and costs the German slice
+nothing; that measurement is the next section.
 
 ### By frequency band (micro recall, gold assignments in brackets)
 
@@ -330,6 +343,190 @@ a heading is present, and the recall figures above are what that is worth. And
 no stemming or decompounding is applied, so `Polymerisationsgrad` in a title
 does not reach the label `Polymerisation`. German compounds are exactly where
 that loss lands, which makes the measured gap a floor rather than a ceiling.
+
+## rung1 — the three retrievers fused, and the ablation table
+
+    python scripts/run_experiment.py configs/rung1.yaml
+    python scripts/ablate_retrievers.py configs/rung1.yaml --tune-weights
+
+Reciprocal rank fusion over all three retrievers, weights `knn` 1.5, `dense` 1.0,
+`lexical` 1.0 and `rrf_k` 60, tuned on dev and committed to
+[configs/rung1.yaml](../configs/rung1.yaml). Same encoder, same 8,000-document
+index and same German-only label text as the three rows above, so the only new
+thing here is the combining. 5,354 dev records in 15.0s against a warm embedding
+cache: retrieval is 13.7s of that, and fusing 5,354 records × three ranked lists
+is the rest.
+
+|  | R@5 | R@10 | R@25 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|
+| micro | 0.3052 | **0.3964** | 0.4712 | 0.5568 | 0.6242 |
+| official macro-over-cells | 0.4521 | 0.5340 | 0.6011 | 0.6530 | 0.7043 |
+
+Precision, micro: P@5 0.1492, P@10 0.0969 — above kNN's 0.1134 and 0.0739, so
+fusion is not buying recall by spending precision.
+
+**R@100 is the ceiling.** Candidate generation emits 100 codes per record and
+every later stage — reranking, the group prior, adjudication — can only reorder
+within them. 0.6242 micro is what those stages have to work with, and the
+submission's own 50 already reach 0.5568 of it.
+
+### The ablation table
+
+Every retriever alone, every pair, and all three, one row each, at the tuned
+weights. All seven rows come from one retrieval pass:
+`scripts/ablate_retrievers.py` runs the retrievers once and fuses each subset of
+that pass through the same `pipeline.combine` the pipeline itself calls.
+
+| retrievers | R@5 | R@10 | R@25 | R@50 | R@100 | official R@10 |
+|---|---:|---:|---:|---:|---:|---:|
+| dense | 0.0931 | 0.1224 | 0.1682 | 0.2110 | 0.2564 | 0.1260 |
+| knn | 0.2319 | 0.3023 | 0.3793 | 0.4495 | 0.5091 | 0.3948 |
+| lexical | 0.1131 | 0.1558 | 0.2171 | 0.2532 | 0.2864 | 0.1416 |
+| dense + knn | 0.2555 | 0.3298 | 0.4011 | 0.5073 | 0.5794 | 0.4534 |
+| dense + lexical | 0.1639 | 0.2099 | 0.2740 | 0.3256 | 0.3763 | 0.1736 |
+| knn + lexical | 0.2731 | 0.3434 | 0.4109 | 0.5084 | 0.5836 | 0.4239 |
+| **dense + knn + lexical** | **0.3052** | **0.3964** | **0.4712** | **0.5568** | **0.6242** | **0.5340** |
+
+The single-retriever rows are the three sections above, reproduced to four
+decimals by this second code path, which is the check that the ablation harness
+and `run_experiment.py` are measuring the same thing.
+
+**Fusion's contribution is a number: +0.0942 micro R@10 over the best single
+retriever** (0.3964 against kNN's 0.3023, a 31% relative gain) and +0.1152 at the
+ceiling (0.6242 against 0.5091). Every pair beats both of its members, and all
+three beat every pair, so no retriever is dead weight — the third one is worth
++0.0530 on top of `knn + lexical`, +0.0666 on top of `dense + knn`, and +0.1865
+on top of `dense + lexical`.
+
+The two pairs containing kNN are close to each other (0.3434 and 0.3298) and both
+far above the pair without it, which is the expected shape: 59.5% of dev gold
+assignments are head or torso, where document similarity is the strongest
+available signal. What is less expected is that `knn + lexical` edges out
+`dense + knn` at every k up to 50 — BM25 over label names contributes more to the
+neighbour harvest than the label tower does, at a fraction of the cost — and that
+the order reverses in the official aggregation (0.4239 against 0.4534), because
+the tower's gains land in the tiny cells that carry the official vote.
+
+### The ablation by frequency band (micro R@10)
+
+| retrievers | head | torso | tail | zero |
+|---|---:|---:|---:|---:|
+| dense | 0.0538 | 0.0900 | 0.1628 | 0.2623 |
+| knn | 0.6923 | 0.3639 | 0.1089 | 0.0000 |
+| lexical | 0.1886 | 0.1445 | 0.1456 | 0.1925 |
+| dense + knn | 0.6993 | 0.3968 | 0.1463 | 0.0000 |
+| dense + lexical | 0.1812 | 0.1793 | 0.2361 | 0.3214 |
+| knn + lexical | 0.7274 | 0.4251 | 0.1365 | 0.0000 |
+| dense + knn + lexical | 0.7072 | 0.4511 | 0.2262 | 0.1871 |
+
+The fused row is above every single retriever in three of the four bands, and
+the margins say what fusion is doing: head 0.7072 against kNN's 0.6923, torso
+0.4511 against 0.3639, tail 0.2262 against the tower's 0.1628. The three
+mechanisms fail in different places — kNN monotonically down the bands, the
+tower monotonically up, lexical flat — and combining them recovers most of each.
+
+**The zero-shot band is the exception, and it is a cost rather than a rounding
+error.** The tower alone reaches 0.2623 there; fused, the band drops to 0.1871.
+Two rows explain it. `knn + lexical` scores 0.0000 on a band where `lexical`
+alone scores 0.1925: kNN is structurally empty in that band, and giving it
+weight 1.5 pushes every zero-shot candidate the other retrievers found out of the
+top ten. Weights tuned on an aggregate that is 59.5% head-and-torso will do that,
+and the tuning had no reason not to: the sweep selects on micro R@10 and is not
+shown the bands, so a weighting that protects the zero band was never something
+it was asked for. The band is not lost, only demoted: at the ceiling it is 0.4288, against the tower's own 0.4333 (below).
+Ranking those candidates back up is what the reranker (ticket 12) and the group
+prior (ticket 11) are for, and this row is the number they have to beat.
+
+### The candidate ceiling by band (micro R@100)
+
+| retrievers | head | torso | tail | zero |
+|---|---:|---:|---:|---:|
+| dense | 0.1407 | 0.2171 | 0.3194 | 0.4333 |
+| knn | 0.9215 | 0.6542 | 0.2449 | 0.0000 |
+| lexical | 0.3106 | 0.2848 | 0.2686 | 0.3178 |
+| dense + knn | 0.9052 | 0.6516 | 0.3864 | 0.3375 |
+| dense + lexical | 0.3136 | 0.3519 | 0.4082 | 0.4969 |
+| knn + lexical | 0.9111 | 0.6774 | 0.3840 | 0.2525 |
+| dense + knn + lexical | 0.9027 | 0.6793 | 0.4654 | 0.4288 |
+
+This is the table the later stages are budgeted against. The fused candidate set
+holds the right label for 90.3% of head assignments, 67.9% of torso, 46.5% of
+tail and 42.9% of zero-shot ones; nothing downstream can exceed those without a
+different candidate generator. The head and torso columns are essentially kNN's
+(0.9215 and 0.6542) — fusion neither adds nor destroys much where the harvest is
+strong — while tail and zero are where the other two retrievers do their work:
+0.4654 against kNN's 0.2449, and 0.4288 against its structural 0.0000.
+
+### Tuning the weights
+
+    python scripts/ablate_retrievers.py configs/rung1.yaml --tune-weights
+
+256 combinations — eight weights each for `knn` and `lexical` against `dense`
+held at 1.0, times four values of `rrf_k` — fused and scored on the same single
+retrieval pass, 290s in total. Reciprocal rank fusion is invariant to a global
+scaling of the weights, so holding one at 1.0 costs no coverage.
+
+| dense | knn | lexical | rrf_k | micro R@10 | micro R@100 |
+|---:|---:|---:|---:|---:|---:|
+| 1.00 | 1.50 | 1.00 | 60 | **0.3964** | 0.6242 |
+| 1.00 | 2.00 | 1.50 | 60 | 0.3951 | 0.6084 |
+| 1.00 | 2.00 | 1.50 | 100 | 0.3930 | 0.5937 |
+| 1.00 | 1.50 | 1.00 | 30 | 0.3920 | 0.6225 |
+| 1.00 | 1.50 | 1.00 | 100 | 0.3904 | 0.6223 |
+
+Selection is micro R@10, as everywhere else in this document. The surface is
+flat: equal weights at `rrf_k` 60 score 0.3705, so tuning is worth +0.0259, and
+the top five combinations sit within 0.006 of each other. `rrf_k` moves the
+figure less than the weights do — the four values are within 0.015 at the best
+weights — and the winning setting is the conventional 60, which is worth
+recording as "the default was not beaten" rather than as a tuned parameter.
+The weights are a statement about three retrievers under one encoder, so rung 2
+and rung 3 retune rather than inherit these.
+
+### Where the official figure comes from
+
+The divergence is the widest of any row in this document: official R@10 0.5340
+against micro 0.3964, +0.1376.
+
+| cell | records | share of records | share of the figure |
+|---|---:|---:|---:|
+| Book / ca | 1 | 0.02% | 7.65% |
+| Book / ja | 1 | 0.02% | 7.65% |
+| Book / zh | 3 | 0.06% | 7.50% |
+| Article / en | 41 | 0.77% | 6.75% |
+| Book / it | 3 | 0.06% | 6.48% |
+| Conference / fr | 3 | 0.06% | 6.08% |
+| Book / nl | 4 | 0.07% | 5.65% |
+| Conference / de | 106 | 1.98% | 5.05% |
+
+Eight of 22 cells carry 52.8% of the official figure between 3.0% of the
+records. The eight are the union of the cells that dominated the three single
+retrievers rather than a fourth set — which is what a fused system should look
+like — and the concentration is why the leaderboard-comparable number is quoted
+beside the micro one and never instead of it.
+
+### Language and type
+
+| language (micro) | R@10 | | record type (official) | R@10 |
+|---|---:|---|---|---:|
+| de (5,263) | 0.4549 | | Article (54) | 0.8659 |
+| en (7,736) | 0.3559 | | Book (8,467) | 0.4912 |
+| gap | +0.0990 | | Conference (1,216) | 0.4499 |
+| | | | Report (502) | 0.4246 |
+| | | | Thesis (2,846) | 0.3601 |
+
+The German-to-English gap is +9.9 points, between kNN's +4.6 and the lexical
+retriever's +12.8, which is what fusing a strongly asymmetric retriever into two
+mildly asymmetric ones does. Label text is German-only at this rung, so it is
+still the largest single mismatch in the pipeline (ticket 08). Theses remain the
+weakest type and the second largest, at 0.3601 against Books' 0.4912.
+
+For orientation only: the published leaderboard is test-set and official
+aggregation — RUC 0.57, Annif 0.54, DUTIR831 0.54, LA2I2F 0.49 at R@10. This row
+is dev, at rung 1, with off-the-shelf weights and an 8,000-document index, and
+its official-aggregation R@10 is 0.5340. Those numbers are not comparable and
+the test split stays closed until ticket 17; the resemblance is a reason to keep
+going, not a result.
 
 ## baseline — the classifier this project rejects
 
@@ -445,3 +642,139 @@ dev row like every other row in this document. The prediction path exists and is
 gated: `python -m baseline.train --predict core_test` refuses to run without
 `--open-test-set`, so producing the test row later is a flag rather than a
 change to the code that produced this one.
+
+## rung1 — translated label names
+
+    python scripts/translate_labels.py                            # once, 122s
+    python scripts/run_experiment.py configs/rung1-dense.yaml     # bilingual
+    python scripts/run_experiment.py configs/rung1-dense-german.yaml
+    python scripts/run_experiment.py configs/rung1-lexical.yaml   # bilingual
+    python scripts/run_experiment.py configs/rung1-lexical-german.yaml
+
+All 79,427 vocabulary entries are German and 58.7% of dev gold assignments belong
+to English documents, so the three rows above measured a cross-lingual match for
+most of the benchmark. `Helsinki-NLP/opus-mt-de-en` translated the 79,224
+distinct German strings the renderer can ask about — every preferred name split
+into base and qualifier, plus the 66 classification names — in 122 s on the M4
+Pro, once, into `reference/label_translations.json`. 23.8% of them come back
+identical to their source (proper nouns, formulae, loanwords) and render in one
+language rather than two.
+
+The four runs are two flag changes: `label_text.bilingual`, on the two
+retrievers that read label text. kNN is not one of them and cannot be — it
+harvests the gold subjects of neighbouring documents and never renders a label.
+
+**The German-only runs reproduce the two sections above to four decimals**
+(dense micro R@10 0.1224, lexical 0.1558), which is what makes the comparison a
+measurement of the label text and nothing else.
+
+### The result, by document language (micro recall, the aggregation selection uses)
+
+The deliverable is per language, because the intervention is aimed at one of
+them. Dev holds 7,736 English gold assignments and 5,263 German.
+
+| | | de R@10 | en R@10 | de R@50 | en R@50 | micro R@10 |
+|---|---|---:|---:|---:|---:|---:|
+| **dense** | German-only | 0.1537 | 0.1010 | 0.2635 | 0.1752 | 0.1224 |
+| | bilingual | 0.1233 | 0.1090 | 0.2229 | 0.1935 | 0.1149 |
+| | change | **−0.0304** | **+0.0080** | −0.0406 | +0.0183 | −0.0075 |
+| **lexical** | German-only | 0.2322 | 0.1041 | 0.3667 | 0.1768 | 0.1558 |
+| | bilingual | 0.2314 | 0.1418 | 0.3831 | 0.3042 | 0.1781 |
+| | change | **−0.0008** | **+0.0377** | +0.0164 | +0.1274 | +0.0223 |
+
+**Translation helps the English half of both retrievers and the verdict still
+splits, because of what the German half does.** On the lexical retriever German
+is unmoved (−0.0008 at k=10, *+*0.0164 at k=50) while English gains 36% at k=10
+and 72% at k=50. On the label tower English gains 7.9% and German loses 19.8% —
+3.8 times as much recall as English gained — and the retriever is net worse.
+
+The mechanism is the difference between the two, not a property of the
+translations, and it is visible in how each retriever consumes the English:
+
+- **Lexical adds a string.** Each label's English name is one more surface form
+  BM25 can match, beside its German name and its synonyms — 150,984 strings
+  become 212,175. A German document still matches the German name exactly as
+  it did; nothing it used to match was taken away. Recall can only go up, and it
+  does, by 8.3 points of micro R@50.
+- **Dense adds words to one vector.** The tower has one embedding per label, and
+  `Polymere / Polymers` is a different point in space from `Polymere`. Every
+  German name in the vocabulary moved. A bilingual query representation would
+  cost nothing, but a bilingual *label* representation is paid for in the
+  language that already matched.
+
+So the ticket's premise — that German-only label text is why label matching
+trails neighbour retrieval — is half right. It is the reason the *English* half
+trails, and translating fixes that on both retrievers. It is not free on a
+retriever whose label representation is a single vector.
+
+### The language gap, which is what the ticket set out to close
+
+The de-minus-en gap at k=10, before and after, on all three retrievers:
+
+| retriever | German-only | bilingual | closed by |
+|---|---:|---:|---:|
+| dense | +0.0527 | +0.0143 | 73% |
+| lexical | +0.1281 | +0.0896 | 30% |
+
+kNN has no row: it reads no label text, so its gap — +4.6 points, quoted above
+in the official aggregation and not comparable to this micro table — is not a
+quantity translation can reach. What it measures is the language of the
+*documents* in the index, which is ticket 10's variable rather than this one's.
+
+Both of the two close, and they close in opposite ways. The tower's gap closes by 73% and
+almost all of it is German falling. The lexical gap closes by 30% and all of it
+is English rising: at k=50 that retriever goes from German being 2.07× English
+to 1.26×, which is the largest single language correction in the project so far.
+
+### By frequency band (micro recall, bilingual, gold assignments in brackets)
+
+| band | dense R@10 | Δ | lexical R@10 | Δ |
+|---|---:|---:|---:|---:|
+| head (2,025) | 0.0375 | −0.0163 | 0.1931 | +0.0045 |
+| torso (5,766) | 0.0808 | −0.0092 | 0.1576 | +0.0131 |
+| tail (4,177) | 0.1597 | −0.0031 | 0.1858 | +0.0402 |
+| zero (1,117) | 0.2632 | +0.0009 | 0.2283 | +0.0358 |
+
+The tower's loss is monotone in frequency and lands almost entirely on the head:
+those 65 labels are broad German headings, they are the ones whose vectors moved
+most, and they were already this retriever's weakest band. Its zero-shot band —
+the band ticket 05 exists for — is untouched at 0.2632, so nothing about the
+argument for the dense retriever changes.
+
+The lexical gains run the other way, biggest on tail and zero-shot: a specific
+compound or named entity is exactly the kind of heading whose English name
+appears verbatim in an English abstract. Its zero-shot band goes 0.1925 to
+0.2283 for no model and no training.
+
+### Cost, and what "no per-run cost" means
+
+| | German-only | bilingual |
+|---|---:|---:|
+| dense, 5,354 dev records | 7.0 s warm | 186.2 s cold, 7 s warm |
+| lexical, 5,354 dev records | 7.5 s | 7.0 s |
+| translation | — | 122 s, once, committed |
+
+The 186.2 s is re-embedding the 79,427-label tower, which any change to the
+label rendering costs once — the cache keys on the texts, so the bilingual tower
+and the German-only one are two files and switching between them is free
+thereafter. Nothing in either run loads a translation model; the renderer looks
+strings up in a dict, and `tests/test_label_translations.py` asserts against the
+source that no module on the rendering path can import one.
+
+### What this changes
+
+`label_text.bilingual` stays `true` in the committed rungs. The two retrievers
+that read label text are fused, not chosen between, and standalone they move in
+opposite directions by unequal amounts: lexical +0.0223 micro R@10 against the
+tower's −0.0075. Those two numbers are not addable — recall over a fused list is
+not the sum of recall over the parts, and neither run here is fused — so what
+the pair is worth under fusion is a row ticket 07 measures, not one this section
+can compute. The reason to expect it positive is that the larger move is the
+gain, and that translation changes *which* labels each retriever reaches rather
+than only how many.
+
+The finding argues for making the flag per-retriever rather than global, so the
+tower can read German while the lexical index reads both. That is a config
+change with no new mechanism behind it, and it is left as a follow-up rather
+than taken here: it needs its own row against `rung2`, where the encoder ranking
+is settled, rather than a fourth variant of rung 1.

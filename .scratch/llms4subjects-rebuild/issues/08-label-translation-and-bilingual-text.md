@@ -16,10 +16,24 @@ intervention rather than a speculative one.
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every vocabulary preferred name has a cached English translation
-- [ ] The translation cache is a committed artifact, independent of the model that produced it, and regenerating it is idempotent
-- [ ] Label text renders bilingually, and German-only rendering remains available as an ablation
-- [ ] The bilingual versus German-only comparison is reported separately for German and English documents
-- [ ] Translation adds no per-run cost to indexing or evaluation
+- [x] Every vocabulary preferred name has a cached English translation
+- [x] The translation cache is a committed artifact, independent of the model that produced it, and regenerating it is idempotent
+- [x] Label text renders bilingually, and German-only rendering remains available as an ablation
+- [x] The bilingual versus German-only comparison is reported separately for German and English documents
+- [x] Translation adds no per-run cost to indexing or evaluation
+
+**Result:** split, and the split is the finding. Translation lifts the English
+slice of both retrievers that read label text — lexical +0.0377 micro R@10 and
++0.1274 at k=50, dense +0.0080 — but the dense tower's German slice falls
+0.0304, because its English goes *inside* the one vector per label while
+lexical's goes beside it as one more surface string. The larger move is the
+gain, so `bilingual` stays `true` in the committed rungs; what the pair is worth
+fused is ticket 07's row, since recall does not add across retrievers. The
+language gap closes 73% on dense and 30% on lexical. Full numbers in
+docs/results.md, "rung1 — translated label names".
+
+Follow-up the numbers argue for, not taken here: make `bilingual` per-retriever
+so the tower can read German while the lexical index reads both. It needs its
+own row against rung 2 rather than a fourth variant of rung 1.

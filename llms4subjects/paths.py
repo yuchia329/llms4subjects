@@ -23,6 +23,12 @@ REFERENCE_DIR = REPO_ROOT / "reference"
 # only by `python scripts/freeze_bands.py --force`; see docs/artifacts.md.
 FREQUENCY_BANDS_FILE = REFERENCE_DIR / "frequency_bands.json"
 
+# English translations of the vocabulary's German preferred names, their
+# qualifiers and the 66 classification names, translated once and committed so
+# that no run loads a translation model. Regenerated only by
+# `python scripts/translate_labels.py`; see docs/artifacts.md.
+LABEL_TRANSLATIONS_FILE = REFERENCE_DIR / "label_translations.json"
+
 SPLIT_FILES = {
     "core_train": TIBKAT_DIR / "core_train.csv",
     "core_dev": TIBKAT_DIR / "core_dev.csv",
