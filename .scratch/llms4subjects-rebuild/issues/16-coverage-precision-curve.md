@@ -14,10 +14,18 @@ result.
 
 **Blocked by:** 13
 
-**Status:** ready-for-agent
+**Status:** done — `scripts/coverage_curve.py`, the curve in docs/results.md
 
-- [ ] A coverage-versus-precision curve is produced from existing dev scores with no additional inference
-- [ ] The curve reports both coverage and precision at several thresholds, including full coverage
-- [ ] The figure is labelled as outside the official metric wherever it appears
-- [ ] The confidence measure driving the curve is the one produced by the reranking stage
-- [ ] The system's output contract is unchanged: 50 codes are still always returned
+- [x] A coverage-versus-precision curve is produced from existing dev scores with no additional inference —
+      the harness replays a cached reranking pass and refuses to run one, so the constraint is enforced rather
+      than promised
+- [x] The curve reports both coverage and precision at several thresholds, including full coverage — ten
+      levels from 100% down to 10%, with the gold assignments given up and the achievable precision beside
+      each row
+- [x] The figure is labelled as outside the official metric wherever it appears — table heading, plot title,
+      the harness's closing note, README and docs/results.md, and a test holds the marker in the renderings
+- [x] The confidence measure driving the curve is the one produced by the reranking stage —
+      `stages.reranker.confidence`, the same signal ticket 13 routes on, and the row names which ranking it
+      was read over
+- [x] The system's output contract is unchanged: 50 codes are still always returned — the curve is an
+      analysis over confidence and never shortens a ranking, which a test holds

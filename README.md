@@ -37,7 +37,8 @@ reference/              frozen reference artifacts, small and tracked on purpose
 official_eval/          the organizers' scorer, unmodified
 scripts/                run_experiment.py, ablate_retrievers.py,
                         screen_encoders.py, compare_rungs.py,
-                        adjudicate_report.py, verify_model_releases.py,
+                        adjudicate_report.py, coverage_curve.py,
+                        verify_model_releases.py,
                         the fixture and band freeze commands
 tests/                  contract and invariant tests
 ```
@@ -67,6 +68,7 @@ dataset is rebuilt there rather than copied, and how adapters come back.
 python -m llms4subjects configs/rung2.yaml            # resolve a config: keys, device, cache hits
 python scripts/run_experiment.py configs/rung1-knn.yaml   # predict dev and score it
 python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300   # what reranking changes
+python scripts/coverage_curve.py configs/rung1.yaml    # coverage against precision, dev-only
 python scripts/translate_labels.py --report           # translation cache coverage
 python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
 pytest                                                # contract and invariant tests
@@ -448,6 +450,36 @@ act:
 python scripts/freeze_bands.py            # report the bands, refuse to overwrite
 python scripts/freeze_bands.py --force    # rewrite the reference
 ```
+
+### Coverage against precision, which the official metric cannot ask about
+
+The submission format is exactly 50 ranked codes and has no representation for
+abstention, so no leaderboard figure can say what a system is worth when it is
+allowed to decline. The workflow this project exists to support can: a librarian
+confirming proposals is better served by a system that answers 60% of records
+well than by one that answers every record badly.
+
+```
+python scripts/coverage_curve.py configs/rung1.yaml
+python scripts/coverage_curve.py configs/rung1.yaml --figure artifacts/coverage/rung1-fused.png
+```
+
+The curve sweeps the confidence measure the reranking stage defines and scores
+the records still answered at each level. On dev at full coverage, P@5 is 0.1567
+and 39.2% of records hold no correct label in their top five; declining the
+least-confident half lifts P@5 to 0.1991 and lowers that share to 26.7%, and the
+most confident tenth reaches 0.2627 — half of the 0.53 those records' gold set
+sizes allow. It costs what it looks like it costs: answering half the records
+answers 53.4% of the split's gold assignments, and the curve prints that column
+beside the precision so abstention never reads as free.
+
+Three things keep the figure from being mistaken for a result: every rendering
+of it, table and plot alike, carries **outside the official metric**; the split
+is dev and `core_test` is refused; and the harness produces the figure from
+scores already computed — a reranking config is replayed from its cached
+scoring pass or refused, never rescored. The output contract does not move: 50
+codes are still always returned, and abstention is a reading of the confidence
+column. See [docs/results.md](docs/results.md).
 
 `llms4subjects.stages.submission` writes the organizers' `<Type>/<lang>/<id>.json`
 tree with exactly 50 ranked codes per record, so a run can be validated against

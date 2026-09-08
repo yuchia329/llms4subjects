@@ -1706,3 +1706,166 @@ throughout; the figures above are the cold index passes from the first run.
   re-derivable in milliseconds rather than in four hours, and
   `tests/test_compare_rungs.py` fails if a later config edit makes them
   incomparable.
+
+## rung 1 — coverage against precision, the one figure outside the official metric
+
+Ticket 16. Everything else in this document is a number the leaderboard could
+also produce. This section is not, and cannot be: the submission format is
+exactly 50 ranked codes with no representation for fewer, so a system on this
+benchmark cannot decline a record and the official metric cannot reward
+declining one. **Nothing below is comparable to a published figure.**
+
+It is measured anyway, because the workflow the project exists to support is
+suggest-and-confirm — a librarian confirming proposals — and there the useful
+question is not how a system does on every record but how it does on the records
+it is willing to answer, and how many it gives up to get there.
+
+    python scripts/coverage_curve.py configs/rung1.yaml
+    python scripts/coverage_curve.py configs/rung1.yaml \
+        --figure artifacts/coverage/rung1-fused.png
+
+The pass costs no inference of its own. The confidence measure is
+`reranker.confidence` — the mean score of a record's top 5, the same signal
+ticket 13 routes on — read over a ranking that has already been computed, and
+each row is the retained subset scored through the evaluator every other table
+here goes through. A config with reranking on is replayed from its cached
+scoring pass or refused; the harness will not spend a cross-encoder pass to draw
+a picture.
+
+### The curve, over the fused ranking (5,354 dev records)
+
+| coverage asked | coverage taken | records | confidence >= | P@5 | of achievable | R@10 on answered | gold answered | no hit in 5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100% | 100.0% | 5354 | 0.0238 | 0.1567 | 33.9% | 0.4149 | 100.0% | 39.2% |
+| 90% | 90.0% | 4819 | 0.0253 | 0.1662 | 35.3% | 0.4334 | 91.6% | 35.9% |
+| 80% | 80.0% | 4284 | 0.0265 | 0.1746 | 36.5% | 0.4467 | 82.9% | 33.3% |
+| 70% | 70.0% | 3748 | 0.0277 | 0.1831 | 38.0% | 0.4655 | 73.0% | 30.8% |
+| 60% | 60.0% | 3213 | 0.0289 | 0.1910 | 39.1% | 0.4796 | 63.2% | 28.7% |
+| 50% | 50.0% | 2677 | 0.0300 | 0.1991 | 40.3% | 0.4947 | 53.4% | 26.7% |
+| 40% | 40.0% | 2142 | 0.0312 | 0.2105 | 42.1% | 0.5154 | 43.1% | 24.1% |
+| 30% | 30.0% | 1607 | 0.0325 | 0.2192 | 42.9% | 0.5257 | 32.8% | 23.0% |
+| 20% | 20.0% | 1071 | 0.0343 | 0.2366 | 45.5% | 0.5460 | 22.3% | 19.4% |
+| 10% | 10.0% | 536 | 0.0366 | 0.2627 | 49.5% | 0.5833 | 11.5% | 15.3% |
+
+The full-coverage row is the `rung1` fused system exactly as the rest of this
+document reports it — 0.1567 P@5, 0.4149 micro R@10 — which is what makes every
+row under it attributable to the threshold and to nothing else.
+
+Precision rises monotonically as the threshold does, and it rises smoothly: no
+elbow, no coverage level where the curve suddenly pays off. Declining the
+least-confident half of dev buys **+0.0424 P@5** (0.1567 to 0.1991) and takes
+the share of records with no correct label in their top five from 39.2% to
+26.7%. Declining nine records in ten buys 0.2627, which is 49.5% of what those
+records' gold set sizes allow — the closest to a ceiling anything in this
+project has come, on 536 records.
+
+That smoothness is itself the result. A confidence measure that separated a
+clean subset from a hopeless one would show a knee, and this one does not: it
+ranks records correctly (ticket 12 measured +0.41 Pearson against per-record
+P@5) without finding a natural place to cut. So the operating point is a
+policy decision about review capacity, not a discovery, and the honest summary
+is the exchange rate rather than a recommended threshold: **+0.0085 P@5 per 10
+points of coverage given up over the first half of the sweep, +0.0159 over the
+second**. The rate roughly doubles as the curve tightens, which says the measure
+is at its most useful at the bottom — it is better at naming the records that
+are hopeless than at naming the ones that are easy.
+
+### What it costs, printed beside what it buys
+
+The `gold answered` column is why the curve is a trade rather than an
+improvement. At 50% coverage the answered records hold 53.4% of the split's
+13,085 gold assignments; the other 46.6% are not wrong, they are unanswered, and
+a system that stopped there would leave every one of them to be assigned by
+hand. `R@10 on answered` is recall over the retained records alone and must be
+read the same way: 0.4947 at half coverage is not an improvement on 0.4149, it
+is a different denominator.
+
+Precision is also quoted against its ceiling, as everywhere else here: at 2.44
+gold labels per dev record a perfect system scores 0.4622 at k=5, and the
+ceiling *moves along the curve* — the confident records carry slightly larger
+gold sets, so the achievable figure rises from 0.4622 to 0.5306 as coverage
+falls, and the `of achievable` column is the one that compares rows fairly.
+
+### The threshold is a percentile, not a number
+
+The whole sweep spans confidences from 0.0238 to 0.0366. That narrowness is a
+property of reciprocal rank fusion rather than of the records — an RRF score is
+a sum of `1/(60 + rank)` terms, so the scale is compressed and the absolute
+value means nothing outside the run that produced it. The curve therefore
+reports coverage as the control and the threshold as an observation, which is
+the same conclusion ticket 13 reached for routing.
+
+Records tied at the threshold are answered or declined together, so a requested
+coverage and the coverage actually taken can differ; both columns are printed.
+On dev at these ten levels they never do, because the fused scores are nearly
+all distinct.
+
+### Over the reranked ranking, on the 300-record sample
+
+The confidence measure is defined over any scored ranking, and which ranking it
+is read from changes what it knows (ticket 12). The pipeline's reranked ranking
+is the one the stage actually emits — the cross-encoder's order fused with the
+retrieval order at `mix_weight: 1.0` — and its curve is the one the
+suggest-and-confirm workflow would live on if reranking were switched on. It is
+measured on the same 300-record stratified sample the reranker was screened at,
+because a dev pass through the cross-encoder costs 3.9 hours and the cached
+scoring pass from that screen is what this replays.
+
+    python scripts/rerank_report.py configs/rung1-rerank-base.yaml --sample 300
+    python scripts/coverage_curve.py configs/rung1-rerank-base.yaml --sample 300
+
+| coverage | records | P@5 fused | P@5 reranked | no hit in 5, fused | no hit in 5, reranked |
+|---|---:|---:|---:|---:|---:|
+| 100% | 300 | 0.1700 | **0.1833** | 35.0% | 33.3% |
+| 90% | 270 | 0.1800 | **0.1948** | 31.5% | 30.4% |
+| 80% | 240 | 0.1892 | **0.2050** | 28.3% | 26.7% |
+| 70% | 210 | 0.1962 | **0.2105** | 27.6% | 26.2% |
+| 60% | 180 | 0.2089 | **0.2244** | 24.4% | 22.8% |
+| 50% | 150 | 0.2147 | **0.2387** | 24.0% | 19.3% |
+| 40% | 120 | 0.2300 | **0.2517** | 19.2% | 15.8% |
+| 30% | 90 | 0.2489 | **0.2600** | 16.7% | 13.3% |
+| 20% | 60 | 0.2700 | **0.2900** | 13.3% | 6.7% |
+| 10% | 30 | **0.3200** | 0.3000 | 6.7% | 10.0% |
+
+Two readings, and only the first is safe. The reranked curve sits above the
+fused one at every coverage level from 100% down to 20%, by 0.011 to 0.024 P@5 —
+the reranker's +0.013 at full coverage does not wash out under thresholding, and
+by 50% coverage it has roughly doubled. Reranking and abstention are not
+competing for the same records.
+
+The second reading is that the two cross at 10% coverage, where the fused curve
+scores higher. That row is 30 records and means nothing; it is printed because
+suppressing a row that disagrees with the sentence above it would be the wrong
+habit. Everything below 20% coverage on this sample is 60 records or fewer, and
+the full-split fused curve above is where the shape of the tail should be read.
+
+The reranked ranking's confidence spans 0.0260 to 0.0312 — narrower still than
+the fused one's, because `mix: fuse` returns reciprocal-rank scores rather than
+the model's own relevance. That is the right choice for routing and for this
+curve, and ticket 12 is why: read from the cross-encoder's bare relevance under
+`mix: replace`, the same measure correlates −0.05 with per-record precision, and
+a curve drawn on it would slope the wrong way. The harness names which ranking
+each figure was read from for exactly this reason.
+
+### What this changes
+
+Nothing in the pipeline, which is the point. No stage learned to abstain, no
+config gained a threshold, and the submission writer still emits exactly 50
+codes for every record — abstention is a reading of the confidence column, and
+`tests/test_coverage_curve.py` holds the curve to being an analysis: it returns
+measurements, never a ranking, and the sequence it is handed comes back
+untouched.
+
+What the project gains is the one honest number attached to the workflow it
+claims to serve, and its price in the same table: **+0.0424 P@5 for half the
+records, at the cost of 46.6% of the gold assignments left unanswered**. The
+figure is dev-only, the harness refuses `core_test`, and every rendering of it —
+table heading, plot title, this section — carries "outside the official metric",
+because a coverage-restricted precision is higher than the same system's
+official precision by construction and would otherwise read as a result the
+leaderboard could compare.
+
+The PNG is written where the `--figure` flag points and is not tracked;
+`artifacts/` is a cache, and the command above reproduces it in a minute from
+vectors already on disk.
+

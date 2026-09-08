@@ -305,12 +305,12 @@ def _reranked(
     texts = reranker_label_texts(
         config, inputs.vocabulary, inputs.name_qualifiers, _translations(config)
     )
-    path = store.path(RERANK_STAGE, _score_key(config), f"{split}-{len(records)}.npy")
+    path = score_cache_path(config, store, split, len(records))
 
     if path.exists() and not refresh:
         if not quiet:
             print(f"scores replayed from {path}\n")
-        model = _Replay(np.load(path))
+        model = Replay(np.load(path))
         return reranker.rerank(records, fused, texts, config.reranker, model), 0.0
 
     model = _Recording(reranker.load(config.reranker, device))
@@ -338,6 +338,18 @@ SCORED_BY_NOTHING = {
     "mix_rrf_k": 60,
     "output_k": CODES_PER_RECORD,
 }
+
+
+def score_cache_path(
+    config: ExperimentConfig, store: ArtifactStore, split: str, records: int
+) -> Path:
+    """Where a scoring pass over this configuration and record set is cached.
+
+    Public because `scripts/coverage_curve.py` reads the same file: the curve is
+    produced from scores already computed, so it has to ask for the pass by the
+    key the pass was written under rather than by a path it spelt itself.
+    """
+    return store.path(RERANK_STAGE, _score_key(config), f"{split}-{records}.npy")
 
 
 def _score_key(config: ExperimentConfig) -> ExperimentConfig:
@@ -373,7 +385,7 @@ class _Recording:
         return self.scores
 
 
-class _Replay:
+class Replay:
     """A cached scoring pass behind the model interface.
 
     It refuses a different number of pairs rather than scoring what it can: the
