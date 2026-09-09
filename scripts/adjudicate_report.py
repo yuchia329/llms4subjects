@@ -44,7 +44,7 @@ from llms4subjects.artifacts import (  # noqa: E402
 )
 from llms4subjects.config import ExperimentConfig, IndexConfig, load_experiment  # noqa: E402
 from llms4subjects.contracts import CandidateList, Record  # noqa: E402
-from llms4subjects.corpus import MissingDataset, frequency_bands  # noqa: E402
+from llms4subjects.corpus import frequency_bands  # noqa: E402
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.models import MODEL_CUTOFF  # noqa: E402
 from llms4subjects.pipeline import combine, label_texts, retrieve  # noqa: E402
@@ -55,7 +55,11 @@ from llms4subjects.stages.evaluator import (  # noqa: E402
     evaluate,
 )
 from rerank_report import achievable_precision  # noqa: E402
-from run_experiment import FORBIDDEN_SPLIT, load_inputs  # noqa: E402
+from run_experiment import (  # noqa: E402
+    FORBIDDEN_SPLIT,
+    INPUT_ERRORS,
+    load_inputs,
+)
 
 TABLE_KS = (5, 10, 25, 50)
 
@@ -138,11 +142,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         inputs = load_inputs(config, args.split)
-    except MissingDataset as error:
-        print(error)
-        return 1
-    except KeyError as error:
-        print(error.args[0] if error.args else error)
+    except INPUT_ERRORS as error:
+        # `KeyError` is an unknown --split, and quotes its argument; the
+        # rest already read as sentences.
+        print(error.args[0] if isinstance(error, KeyError) else error)
         return 1
 
     records = _sampled(inputs.records, args.sample)

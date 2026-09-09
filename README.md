@@ -26,7 +26,9 @@ llms4subjects/          the pipeline, one module per stage under stages/
   config.py             experiment configuration, loaded from configs/*.yaml
   contracts.py          the artifacts stages pass between each other
   corpus.py             the only module that reads the dataset
+  splits.py             what may be indexed, and the held-out records dropped
   artifacts.py          the cached-artifact convention
+  finetune.py           contrastive fine-tuning and the adapter it leaves
   hardware.py           device selection, and what to say when CUDA is absent
   pipeline.py           predict(...) — the seam tests assert against
   stages/               label_text, encoders, indexes, retrievers, fusion,
@@ -38,6 +40,8 @@ official_eval/          the organizers' scorer, unmodified
 scripts/                run_experiment.py, ablate_retrievers.py,
                         screen_encoders.py, compare_rungs.py,
                         adjudicate_report.py, coverage_curve.py,
+                        mine_hard_negatives.py, train_encoder.py,
+                        rung3_report.py, verify_split_alignment.py,
                         verify_model_releases.py,
                         the fixture and band freeze commands
 tests/                  contract and invariant tests
@@ -71,6 +75,7 @@ python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300   # what 
 python scripts/coverage_curve.py configs/rung1.yaml    # coverage against precision, dev-only
 python scripts/translate_labels.py --report           # translation cache coverage
 python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
+python scripts/verify_split_alignment.py              # which corpora are clear to index
 pytest                                                # contract and invariant tests
 ```
 
@@ -98,6 +103,22 @@ python build_tibkat_csv.py
 | `core_train.csv` | 32,043 | 14,607 | 78,037 |
 | `core_dev.csv` | 5,354 | 5,563 | 13,085 |
 | `core_test.csv` | 4,910 | 5,189 | 11,798 |
+
+Rung 3 also needs the second shared-task track, which is a separate build:
+
+```
+python build_tibkat_csv.py --subset all-subjects
+python scripts/verify_split_alignment.py
+```
+
+`all_train.csv` is 70,633 rows under **70,588 distinct records** — 45 documents
+the release files twice, 20 of them with differing gold — and it contains every
+`core_train` record plus 38,545 more. The second command is what makes it usable:
+it checks both index corpora against the held-out splits and commits the answer
+to `reference/split_alignment.json`, which every run reads before it indexes
+anything. The gold test split is clear — **none of its 4,910 records is in
+`all_train`** — and nine `core_dev` records are not, so those nine are named in
+the attestation and dropped from every index. 70,579 documents indexed.
 
 `core_test.csv` is the organizers' gold-standard test set, released after the
 competition. Columns are `id, type, lang, title, abstract, subjects`; `id` is the
@@ -402,6 +423,49 @@ what carrying two forward was for. The dense and lexical columns are identical a
 both index sizes, as they must be — neither reads an indexed document — so every
 difference is the neighbour retriever's. See
 [docs/results.md](docs/results.md).
+
+## Rung 3: the all-subjects index, and what the GPU bought
+
+Both shortlisted encoders then run at the 70,579-document all-subjects index,
+each off the shelf and contrastively fine-tuned, so that index size and training
+are separable:
+
+| encoder | rung 2 | rung 3, off the shelf | rung 3, fine-tuned | index adds | training adds |
+|---|---:|---:|---:|---:|---:|
+| `Alibaba-NLP/gte-multilingual-base` | 0.5298 | 0.5376 | **0.6044** | +0.0079 | **+0.0668** |
+| `BAAI/bge-m3` | 0.5337 | 0.5411 | 0.5909 | +0.0073 | +0.0498 |
+
+```
+python scripts/mine_hard_negatives.py configs/rung2-gte-base.yaml
+ssh nlp2 '... scripts/train_encoder.py configs/rung3-gte-base.yaml --negatives-from configs/rung2-gte-base.yaml'
+python scripts/rung3_report.py --pair configs/rung3-untrained.yaml configs/rung3.yaml     --pair configs/rung3-gte-base-untrained.yaml configs/rung3-gte-base.yaml     --against reference/screens/rung2.json --json reference/rung3-report.json
+```
+
+**Index size is spent and the GPU is where the points are.** Doubling the corpus
+again buys +0.008, against +0.06 for the previous fourfold step; two LoRA runs of
+197 and 87 minutes buy +0.05 and +0.07. Hard negatives are mined on the Mac from
+the rung-2 indexes, so the host receives a file and returns a few megabytes of
+adapter; indexing and scoring never leave Apple Silicon.
+
+**The untrained ranking did not survive training either.**
+`gte-multilingual-base` starts 0.0035 behind and finishes 0.0135 ahead, on 2.9M
+trainable parameters against 7.1M and 87 GPU-minutes against 197 — so carrying
+two encoders forward was right for the second rung running. The official
+macro-over-cells metric ranks them the other way (`bge-m3` 0.7089 against 0.6927),
+which is reported rather than reconciled.
+
+**Training buys the head and sells the zero-shot band**: +0.10 to +0.13 on head,
++0.08 to +0.09 on torso, +0.02 to +0.03 on tail, and **−0.056 and −0.023 on
+zero-shot** — the band retrieval was chosen over classification to reach. Every
+training pair is a document and a label some record carries, so the tower learns
+a geometry fitted to the 14,607 seen labels. What is left for the reranker and
+the adjudicator is exactly the band they were measured to be good at.
+
+**And 7.1% of gold assignments are unreachable by any corpus.** Of the 1,053
+dev-gold labels no tib-core training record carries, 38,545 extra documents reach
+173 — all of them into the tail band — and leave 880. A label on no document
+cannot be proposed by document similarity, at any corpus size, which bounds every
+leaderboard system built on it. See [docs/results.md](docs/results.md).
 
 ## Evaluation
 

@@ -1,0 +1,56 @@
+# `gte-multilingual-base` at the rung-3 index, off the shelf (ticket 15).
+#
+# One line apart from configs/rung3-gte-base.yaml — the adapter — and one index section apart
+# from the encoder's rung-2 file. That is what makes three rows separable:
+# this file against rung 2 is index size, and this file against
+# configs/rung3-gte-base.yaml is the fine-tune.
+name: rung3-gte-base
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+
+index:
+  # `all_train` already contains every `core_train` record plus 38,545 more, so
+  # naming both would index each core record twice. 70,588 documents, of which
+  # 70,579 are indexed: nine are `core_dev` records that the all-subjects split
+  # carries and reference/split_alignment.json names.
+  corpora: [all_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Still the weights tuned for `multilingual-e5-base` at rung 1, held for the
+    # reason configs/rung3.yaml holds them: a retune inside this comparison
+    # would be reported as what fine-tuning bought.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Rung 3, `gte-multilingual-base` off the shelf. The control on the fine-tune:
+  same index, same fusion, same label text, untrained weights. It is not
+  a spare row — rung 2 measured a fourfold index at +0.06 on its own, so
+  a fine-tuned score read against rung 2 would credit the training with
+  whatever the extra 38,545 documents bought.

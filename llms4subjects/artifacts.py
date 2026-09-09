@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterator, MutableMapping, Sequence
+from typing import Any, Iterator, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
@@ -55,6 +55,13 @@ STAGE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     # vectors are cached, which is why the whole `group_prior` section keys it
     # rather than only the part training reads.
     "group_prior": ("encoder", "index", "group_prior"),
+    # The untrained retriever's own mistakes over the training split, mined
+    # once and carried to the GPU host as the hard negatives of the rung-3
+    # fine-tune. Keyed exactly as `candidates` is, because that is what they
+    # are: the same retrieval, run over the records that will be trained on.
+    "hard_negatives": (
+        "label_text", "encoder", "index", "retrievers", "fusion",
+    ),
     "reranked": FULL_PIPELINE[: FULL_PIPELINE.index("adjudication")],
     "adjudicated": FULL_PIPELINE,
     "predictions": FULL_PIPELINE,
@@ -430,3 +437,69 @@ def _read_jsonl(path: Path) -> list[dict[str, str]]:
 
 def _read_jsonl_map(path: Path, key: str, value: str) -> dict[str, str]:
     return {entry[key]: entry[value] for entry in _read_jsonl(path)}
+
+
+HARD_NEGATIVE_STAGE = "hard_negatives"
+
+
+class MissingHardNegatives(FileNotFoundError):
+    """A fine-tune asking for mined negatives that were never mined."""
+
+
+def negatives_filename(split: str, depth: int) -> str:
+    """One file per (split, depth), because neither is in the artifact key.
+
+    The key fingerprints the configuration a retrieval depends on, and these two
+    are properties of the mining run instead: which records were mined for, and
+    how deep into each ranking was kept. Two depths over one config are two
+    files under one key rather than a second key that pretends the retriever
+    changed.
+    """
+    return f"negatives-{split}-{depth}.jsonl"
+
+
+def save_hard_negatives(
+    store: ArtifactStore,
+    config: ExperimentConfig,
+    split: str,
+    depth: int,
+    mined: Mapping[str, Sequence[str]],
+) -> Path:
+    """Write the mined rankings, one record per line."""
+    directory = store.prepare(HARD_NEGATIVE_STAGE, config)
+    path = directory / negatives_filename(split, depth)
+    partial = path.with_name(path.name + ".partial")
+    with partial.open("w", encoding="utf-8") as handle:
+        for record_id, codes in mined.items():
+            handle.write(
+                json.dumps(
+                    {"record_id": record_id, "codes": list(codes)},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    partial.replace(path)
+    return path
+
+
+def load_hard_negatives(
+    store: ArtifactStore, config: ExperimentConfig, split: str, depth: int
+) -> dict[str, list[str]]:
+    """The mined rankings for this configuration, or how to mine them.
+
+    Read through the store rather than from a path the caller names, so that a
+    fine-tune cannot be handed one encoder's confusions while training another:
+    the key is the retrieval configuration that produced them.
+    """
+    path = store.path(
+        HARD_NEGATIVE_STAGE, config, negatives_filename(split, depth)
+    )
+    if not path.exists():
+        raise MissingHardNegatives(
+            f"{path} is missing, and the fine-tune needs it. Mine it with:\n"
+            f"  python scripts/mine_hard_negatives.py <the untrained config> "
+            f"--split {split} --depth {depth}"
+        )
+    return {
+        entry["record_id"]: entry["codes"] for entry in _read_jsonl(path)
+    }

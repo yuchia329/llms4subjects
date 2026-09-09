@@ -1,17 +1,38 @@
-# Rung 3: all-subjects train as index (70,588 documents) with the top two
-# encoders fine-tuned. The adapter is the only artifact produced on rented GPU
-# hardware; indexing, retrieval and evaluation still run on Apple Silicon.
-name: rung3-e5-base-finetuned
+# Rung 3 of the experiment ladder (docs/spec.md, "The experiment ladder"): the
+# all-subjects training split as the index, and the encoder fine-tuned. This is
+# `BAAI/bge-m3`, which rung 2 ranked first at the full tib-core index — by
+# 0.0039 over `gte-multilingual-base`, which is why both are carried here and
+# both have a file.
+#
+# Two things move between rung 2 and this rung, so there are four rung-3 files
+# rather than two: each encoder runs off the shelf *and* fine-tuned at the same
+# index, and the difference between those two rows is the fine-tune alone.
+#
+#   python scripts/mine_hard_negatives.py configs/rung2-bge-m3.yaml
+#   # on nlp2, after rsyncing code and the mined negatives:
+#   .venv/bin/python -u scripts/train_encoder.py configs/rung3.yaml \
+#       --negatives-from configs/rung2-bge-m3.yaml
+#   # back on the Mac:
+#   python scripts/rung3_report.py \
+#       --pair configs/rung3-untrained.yaml configs/rung3.yaml \
+#       --pair configs/rung3-gte-base-untrained.yaml configs/rung3-gte-base.yaml \
+#       --against reference/screens/rung2.json --json reference/rung3-report.json
+name: rung3-bge-m3-finetuned
 
 encoder:
-  name: intfloat/multilingual-e5-base
+  name: BAAI/bge-m3
   max_length: 512
   batch_size: 32
-  adapter: artifacts/adapters/e5-base-contrastive-v1
+  # The one field that separates this file from configs/rung3-untrained.yaml.
+  # It is part of the `encoder` section, so it keys the vector cache: the
+  # trained and untrained rows cannot read each other's embeddings.
+  adapter: artifacts/adapters/bge-m3-contrastive-v1
 
 index:
-  # all_train already contains every core_train record plus 38,545 more, so
-  # naming both would index each core record twice.
+  # `all_train` already contains every `core_train` record plus 38,545 more, so
+  # naming both would index each core record twice. 70,588 documents, of which
+  # 70,579 are indexed: nine are `core_dev` records that the all-subjects split
+  # carries and reference/split_alignment.json names.
   corpora: [all_train]
   size: null
   stratify: false
@@ -27,7 +48,12 @@ retrievers:
     enabled: true
     neighbours: 20
     top_k: 100
-    weight: 1.0
+    # Still the weights tuned for `multilingual-e5-base` at rung 1. Rung 2 read
+    # 0.5337 as a floor for that reason and called retuning rung 3's first
+    # step; it is deliberately not taken here, because a retune inside this
+    # comparison would be reported as what fine-tuning bought. It belongs to a
+    # config of its own, against these rows.
+    weight: 1.5
   dense:
     enabled: true
     top_k: 100
@@ -47,5 +73,6 @@ fusion:
 # this file before then would read as a decision that had been made.
 
 notes: >
-  The fine-tuned rung. Band migration against rung 2 is reported here, since
-  the index grows by 38,545 all-subjects documents.
+  Rung 3, `bge-m3` fine-tuned. Read against configs/rung3-untrained.yaml, which
+  is this file without the adapter, and against the encoder's rung-2 row: the
+  first difference is the fine-tune and the second is index size.

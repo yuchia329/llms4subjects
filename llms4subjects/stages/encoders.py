@@ -248,10 +248,16 @@ def pinned(config):
 
 def load(config: EncoderConfig, device: str) -> Encoder:
     """Build the adapter named by the config, on the given device."""
-    if config.adapter is not None:
-        raise NotImplementedError("ticket 15: fine-tuned adapters")
-
     resolved = resolve(config)
+
+    # Checked before any weights are fetched. An adapter trained over another
+    # model would otherwise be discovered after a 2 GB download, and — worse —
+    # an adapter that merely *looks* applicable is checked here too, which is
+    # the case nothing downstream could notice.
+    if config.adapter is not None:
+        from ..finetune import read_adapter
+
+        read_adapter(config.adapter, config.name, resolved.revision)
 
     # Imported here rather than at module scope: `transformers` and `torch` cost
     # seconds to import, and every test of this package that does not encode
@@ -260,6 +266,26 @@ def load(config: EncoderConfig, device: str) -> Encoder:
 
     model = SentenceTransformer(config.name, device=device, **resolved.kwargs())
     model.max_seq_length = config.max_length
+    if config.adapter is not None:
+        model = _apply_adapter(model, config.adapter)
     return SentenceTransformerEncoder(
         model, resolved.prefixes, config.batch_size
     )
+
+
+def _apply_adapter(model, directory: str):
+    """Fold a fine-tune's LoRA deltas into the loaded weights.
+
+    Merged rather than kept as a live peft wrapper: every use of the adapter in
+    this project is inference over hundreds of thousands of texts, and a merged
+    model is the base model's own forward pass — same shape, same speed, no
+    adapter layers in the loop. It also means nothing downstream can tell a
+    trained encoder from an untrained one by its type, which is what makes the
+    trained and untrained rows of rung 3 the same code path.
+    """
+    from peft import PeftModel
+
+    transformer = model[0]
+    adapted = PeftModel.from_pretrained(transformer.auto_model, str(directory))
+    transformer.auto_model = adapted.merge_and_unload()
+    return model

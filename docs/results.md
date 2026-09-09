@@ -1869,3 +1869,325 @@ The PNG is written where the `--figure` flag points and is not tracked;
 `artifacts/` is a cache, and the command above reproduces it in a minute from
 vectors already on disk.
 
+
+## rung 3 — the all-subjects index, and what the GPU actually bought
+
+Ticket 15. Two things move at this rung: the index grows from the 32,043-document
+tib-core training split to the all-subjects one, and the two encoders rung 2
+shortlisted are contrastively fine-tuned. They are reported apart, because they
+are separable only by measurement: each encoder runs off the shelf *and*
+fine-tuned at the same index, so the difference between those two rows is the
+training and the difference between the off-the-shelf row and its rung-2 row is
+the corpus.
+
+```
+python build_tibkat_csv.py --subset all-subjects
+python scripts/verify_split_alignment.py
+python scripts/mine_hard_negatives.py configs/rung2-bge-m3.yaml
+python scripts/mine_hard_negatives.py configs/rung2-gte-base.yaml
+# on nlp2
+.venv/bin/python -u scripts/train_encoder.py configs/rung3.yaml \
+    --negatives-from configs/rung2-bge-m3.yaml --batch-size 8 --negatives 2 \
+    --gradient-checkpointing
+# back on the Mac
+python scripts/rung3_report.py \
+    --pair configs/rung3-untrained.yaml configs/rung3.yaml \
+    --pair configs/rung3-gte-base-untrained.yaml configs/rung3-gte-base.yaml \
+    --against reference/screens/rung2.json --json reference/rung3-report.json
+```
+
+### The corpus is not what the ticket assumed, in two ways
+
+The all-subjects training split was budgeted as 70,588 documents that are free
+of contamination because the two shared-task tracks are split-aligned. Checking
+that before indexing it — `scripts/verify_split_alignment.py`, the one thing in
+this project that opens `core_test` before ticket 17, and it reads record ids
+and nothing else — found both halves of the assumption need qualifying.
+
+| corpus | rows | documents | duplicate ids | in `core_dev` | in `core_test` |
+|---|---:|---:|---:|---:|---:|
+| `core_train` | 32,043 | 32,043 | 0 | 0 | 0 |
+| `all_train` | 70,633 | 70,588 | 45 | **9** | **0** |
+
+**The test claim holds exactly.** None of the 4,910 gold test records is
+anywhere in `all_train`. That is the claim rung 3 rests on, and it is now
+checked rather than cited.
+
+**The dev claim does not.** Nine `core_dev` records are in the all-subjects
+training split. They are named by id in
+[reference/split_alignment.json](../reference/split_alignment.json) and dropped
+from every index, so the number of indexed documents is **70,579**, not 70,588.
+Nine records out of 70,588 would have moved no metric detectably; that is not
+the reason to drop them. The reason is that the split alignment is the whole
+argument for using this corpus, and an argument with nine known exceptions in it
+is not one that can be checked later.
+
+**And the corpus double-counts 45 documents.** `all_train` is 70,633 rows under
+70,588 ids: 45 documents the release files twice, agreeing on text and metadata,
+and disagreeing on gold for 20 of them. They are merged into one document
+carrying the union of both rows' assignments — 25 assignments that keeping
+either row alone would have dropped. Indexed as they came, those 45 would vote
+twice in every neighbour harvest, and every table saying "70,588 documents"
+would have been describing 70,633.
+
+Both facts are properties of the data rather than of a run, so both are recorded
+in a committed attestation that every run reads before it indexes anything. A
+rebuild of the dataset invalidates it by revision, and the next run then refuses
+to index an unchecked corpus rather than assuming the last check still applies.
+
+### The index grew by 2.2× and bought almost nothing
+
+| encoder | rung 2 (32,043) | rung 3 (70,579) | index adds |
+|---|---:|---:|---:|
+| `BAAI/bge-m3` | 0.5337 | **0.5411** | +0.0073 |
+| `Alibaba-NLP/gte-multilingual-base` | 0.5298 | **0.5376** | +0.0079 |
+
+Dev micro R@10, off the shelf at both index sizes, nothing else moved.
+
+Read against rung 2 this is the rung's first finding, and it is a negative one.
+Going from 8,000 to 32,043 documents — 4× — bought +0.0635 and +0.0573 for these
+two encoders. Going from 32,043 to 70,579 — 2.2× — buys **+0.0073 and +0.0079**,
+an eighth as much for half the growth again. Per doubling of the index, rung 2
+was worth about +0.03 and rung 3 is worth about +0.006.
+
+The control holds exactly, which is what makes the comparison a measurement: the
+dense and lexical columns are identical to four decimals at both index sizes,
+because neither reads an indexed document.
+
+| encoder | index | dense | knn | lexical | fused |
+|---|---:|---:|---:|---:|---:|
+| `bge-m3` | 32,043 | 0.2375 | 0.4667 | 0.1781 | 0.5337 |
+| `bge-m3` | 70,579 | 0.2375 | **0.4901** | 0.1781 | 0.5411 |
+| `gte-multilingual-base` | 32,043 | 0.1999 | 0.4867 | 0.1781 | 0.5298 |
+| `gte-multilingual-base` | 70,579 | 0.1999 | **0.5061** | 0.1781 | 0.5376 |
+
+So the whole effect is the neighbour retriever's, again — +0.0234 and +0.0194 on
+kNN alone — and most of it is lost in fusion, where the tower's candidates are
+competing for the same top ten. The reading is that the neighbour retriever is
+approaching what this benchmark's document similarity can give: at 70,579
+documents a dev record's twentieth-nearest neighbour is already close enough
+that adding more neighbours changes which near-duplicate is cited rather than
+which subject is proposed.
+
+### Where the extra documents do land: the tail, and the zero band
+
+| encoder | index | head | torso | tail | zero |
+|---|---:|---:|---:|---:|---:|
+| `bge-m3` | 32,043 | 0.6958 | 0.5879 | 0.4601 | 0.2355 |
+| `bge-m3` | 70,579 | 0.6894 | 0.5940 | 0.4719 | **0.2578** |
+| `gte-multilingual-base` | 32,043 | 0.6795 | 0.5888 | 0.4582 | 0.2211 |
+| `gte-multilingual-base` | 70,579 | 0.6805 | 0.5917 | 0.4733 | **0.2399** |
+
+The zero-shot band goes **up** — +0.0223 and +0.0188 — and at rung 2 it went
+down, for every encoder. That reversal is the clearest thing in the table and it
+is the band-migration effect arriving as a score: at rung 2 the extra documents
+were more tib-core training records, which carry no zero-shot label by
+definition, so growing the index could only crowd the tower's zero-shot
+candidates out of the top ten. The all-subjects records are from a different
+track, and some of them carry labels tib-core train never used. For the first
+time in this project the neighbour retriever can propose a zero-shot label.
+
+The head band is flat to slightly negative, as it has been at every rung.
+
+### Band migration: 173 of 1,053, and the 880 that no corpus reaches
+
+Bands stay frozen against tib-core train counts throughout, so none of this
+changes a band assignment anywhere; migration is reported as its own quantity.
+
+| frozen band | labels in dev gold | reached by the larger corpus | still unreachable |
+|---|---:|---:|---:|
+| head | 65 | 65 | 0 |
+| torso | 1,404 | 1,404 | 0 |
+| tail | 3,041 | 3,041 | 0 |
+| zero | 1,053 | **173** | **880** |
+
+| weighting | zero-shot before | reached | still zero |
+|---|---:|---:|---:|
+| one vote per label | 1,053 | 173 | 880 |
+| one vote per gold assignment | 1,117 | 192 | 925 |
+
+Of the 1,053 labels in the dev gold that no tib-core training record carries,
+38,545 extra documents reach **173** and leave **880** — carrying **7.1% of all
+gold assignments** — reachable only through label text, at any corpus size. That
+is the project's sharpest number, and it is a bound rather than a result: a
+label that appears on no document cannot be proposed by document similarity, so
+7.1% of this benchmark is out of reach for the entire family of methods the
+leaderboard is made of, including the winning one. Only the label tower, the
+cross-encoder and the adjudicator can score there.
+
+**All 173 land in the tail band**, not one in torso or head. They are labels
+that appear in one to nine of the 70,579 documents, so kNN can propose them in
+principle and will rarely rank them: reaching a label is not retrieving it, and
+the +0.02 the zero band gained is what 173 barely-present labels are worth.
+
+The dev figure is also a check on the ticket's own estimate, which was made
+against the test split: 180 of 992 test labels converting, leaving 812 carrying
+7.2% of assignments. Dev says 173 of 1,053, leaving 880 carrying 7.1%. Two
+different splits agreeing to a tenth of a point on the fraction is the strongest
+evidence available before ticket 17 that the bound is a property of the
+benchmark rather than of a split.
+
+### Fine-tuning is worth seven times what the corpus is
+
+| encoder | rung 2 | rung 3, off the shelf | rung 3, fine-tuned | index adds | training adds |
+|---|---:|---:|---:|---:|---:|
+| `BAAI/bge-m3` | 0.5337 | 0.5411 | 0.5909 | +0.0073 | **+0.0498** |
+| `Alibaba-NLP/gte-multilingual-base` | 0.5298 | 0.5376 | **0.6044** | +0.0079 | **+0.0668** |
+
+This is the rung's headline and the answer to how much of the final score needs
+a GPU at all. Of the +0.0571 and +0.0747 that rung 3 adds over rung 2, the
+corpus contributes an eighth and the fine-tune the rest. Two LoRA runs of 197
+and 87 minutes on one shared A100 are worth roughly seven times what 38,545
+extra documents are.
+
+| encoder | weights | R@5 | R@10 | R@50 | R@100 | official R@10 |
+|---|---|---:|---:|---:|---:|---:|
+| `bge-m3` | off the shelf | 0.4312 | 0.5411 | 0.7485 | 0.7994 | 0.6379 |
+| `bge-m3` | fine-tuned | 0.4813 | 0.5909 | 0.7733 | 0.8235 | 0.7089 |
+| `bge-m3` | **training adds** | +0.0501 | +0.0498 | +0.0248 | +0.0241 | +0.0710 |
+| `gte-multilingual-base` | off the shelf | 0.4121 | 0.5376 | 0.7558 | 0.8069 | 0.6506 |
+| `gte-multilingual-base` | fine-tuned | 0.4895 | 0.6044 | 0.7886 | 0.8378 | 0.6927 |
+| `gte-multilingual-base` | **training adds** | +0.0774 | +0.0668 | +0.0328 | +0.0310 | +0.0421 |
+
+The gain is concentrated at the top of the ranking: +0.05 and +0.08 at R@5
+against +0.024 and +0.031 at the candidate ceiling. Fine-tuning is mostly
+*ordering* the candidates the untrained retriever already found, which is what a
+contrastive objective over in-batch negatives should do, and it means the stage
+after this one — the cross-encoder, which reranks the top 100 — has less left to
+recover than rung 1's reranker screen assumed.
+
+### The untrained ranking did not survive training
+
+Rung 2 shortlisted two encoders 0.0039 apart and said the order within the pair
+was not a claim this project could make. It was right to.
+
+| encoder | untrained | fine-tuned | trainable | GPU minutes |
+|---|---:|---:|---:|---:|
+| `bge-m3` | **0.5411** (1st) | 0.5909 (2nd) | 7.1M | 196.7 |
+| `gte-multilingual-base` | 0.5376 (2nd) | **0.6044** (1st) | 2.9M | 86.6 |
+
+`gte-multilingual-base` starts 0.0035 behind and finishes 0.0135 ahead, because
+it gains half again as much from training (+0.0668 against +0.0498) — on 2.9M
+trainable parameters against 7.1M, in 87 GPU-minutes against 197. A project that
+had shortlisted one encoder on the untrained screen would have taken the wrong
+one, for the second rung running, and would have paid 2.3× the GPU time to do
+it. Carrying two encoders forward (docs/spec.md, story 41) has now been worth it
+twice, and it is the only reason this is a measurement rather than an assumption.
+
+**The official metric disagrees, and is reported rather than reconciled.** On
+macro-over-cells R@10 the order is the other way: `bge-m3` 0.7089 against `gte`
+0.6927. Model selection in this project is dev micro R@10 throughout
+(docs/spec.md, story 4), so `gte-multilingual-base` is the rung-3 encoder, but
+the leaderboard number would name the other one. The same disagreement appeared
+at rung 2 and for the same reason — one vote per `<record type> × language` cell
+weights up small cells whose labels are not tail-heavy — and it is the strongest
+argument in this project for reporting both.
+
+### Training moved the label tower, not the neighbours
+
+| encoder | weights | dense | knn | lexical | fused |
+|---|---|---:|---:|---:|---:|
+| `bge-m3` | off the shelf | 0.2375 | 0.4901 | 0.1781 | 0.5411 |
+| `bge-m3` | fine-tuned | **0.3483** | 0.5137 | 0.1781 | 0.5909 |
+| `gte-multilingual-base` | off the shelf | 0.1999 | 0.5061 | 0.1781 | 0.5376 |
+| `gte-multilingual-base` | fine-tuned | **0.3834** | 0.5213 | 0.1781 | 0.6044 |
+
+The document-to-label retriever gains **+0.1108 and +0.1835** — `gte`'s nearly
+doubles — while the neighbour retriever gains +0.0236 and +0.0152. That is the
+objective doing exactly what it was pointed at: the loss scores a document
+against label *text*, so it trains the tower directly and reaches document-to-
+document similarity only as a side effect.
+
+It also explains the encoder flip. `gte` had the weaker tower untrained (0.1999
+against 0.2375) and has the stronger one trained (0.3834 against 0.3483), so
+what rung 1 and rung 2 measured as a property of the model was in part a
+property of *its off-the-shelf training data*, and one epoch of in-domain pairs
+reverses it.
+
+The lexical column is identical to four decimals in all four rows, as it must
+be: BM25 over the labels' own strings reads no vector, so no fine-tune can move
+it. It is the control that says these four rows differ only where they should.
+
+### Training buys the head and sells the zero-shot band
+
+| encoder | weights | head | torso | tail | zero |
+|---|---|---:|---:|---:|---:|
+| `bge-m3` | off the shelf | 0.6894 | 0.5940 | 0.4719 | 0.2578 |
+| `bge-m3` | fine-tuned | 0.7862 | 0.6724 | 0.4879 | 0.2014 |
+| `bge-m3` | **delta** | +0.0968 | +0.0784 | +0.0160 | **−0.0564** |
+| `gte-multilingual-base` | off the shelf | 0.6805 | 0.5917 | 0.4733 | 0.2399 |
+| `gte-multilingual-base` | fine-tuned | 0.8084 | 0.6793 | 0.5059 | 0.2167 |
+| `gte-multilingual-base` | **delta** | +0.1279 | +0.0876 | +0.0326 | **−0.0233** |
+
+This is the table the whole band breakdown exists for, and it is the least
+comfortable result in the project.
+
+Fine-tuning is **monotonic in label frequency**: the head gains most (+0.10,
++0.13), the torso next (+0.08, +0.09), the tail barely moves (+0.02, +0.03), and
+**the zero-shot band goes backwards** (−0.056, −0.023). The head was already
+near its ceiling before training and gained most anyway; the 992-odd labels that
+carry 8.9% of the benchmark and that this whole retrieval design was chosen to
+reach are the ones training makes *worse*.
+
+The mechanism is visible in the objective. Every training pair is a document and
+one of its gold headings, so every gradient step is evidence about a label some
+training record carries. A label no record carries appears in the loss only as a
+negative, if at all — it is in the vocabulary the tower encodes but never in a
+positive — so the tower learns a geometry fitted to the 14,607 seen labels, and
+the 64,820 unseen ones are pulled around by it without ever being pulled
+towards anything. The head-heavy gain and the zero-shot loss are the same fact.
+
+Two things follow, and both are for later tickets rather than claims here.
+First, the zero-shot regression is smaller for the encoder that gained more
+overall, so it is not a fixed cost of training. Second, this is precisely the
+band the cross-encoder was measured to be good at — ticket 12 found it gains
+0.15 R@10 on the zero-shot band while losing 0.28 on the head — so the two
+stages fail in opposite directions, and rung 3's ranking is the input the
+reranker should be screened against rather than rung 1's.
+
+### What the rung cost
+
+| what | where | cost |
+|---|---|---:|
+| mining hard negatives, both encoders | Mac, warm rung-2 vectors | 7.5 min |
+| `bge-m3` fine-tune, 2 epochs, 19,521 steps | `nlp2`, shared A100 | 196.7 min |
+| `gte` fine-tune, 2 epochs, 19,521 steps | `nlp2`, shared A100 | 86.6 min |
+| both off-the-shelf rows at 70,579 documents | Mac, MPS | 88.5 min |
+| both fine-tuned rows at 70,579 documents | Mac, MPS | 116.6 min |
+
+About 5 hours of Apple Silicon and 4.7 of shared GPU. The two off-the-shelf rows
+re-ran in 72 and 78 seconds inside the report because their vectors were already
+on disk; the fine-tuned rows cost 78 and 39 minutes each, because an adapter is
+part of the `encoder` section and therefore a different cache key — a trained
+encoder shares no vector with its untrained self, by design.
+
+**The GPU was shared throughout**, with a vLLM process holding 74.7 GB of the
+A100's 80. That is why the batch is 8 pairs with 2 mined negatives rather than
+the 32 and 4 the settings default to: three OOM crashes at larger batches cost
+about an hour before the run that finished. In-batch negatives are most of the
+contrastive signal, so a batch of 8 is the one place this rung is knowingly
+under-powered, and the +0.05/+0.07 it bought is a floor rather than the method's
+ceiling. Both runs report **0 batches skipped**, so nothing was silently dropped
+once they started.
+
+### What this decides
+
+- **Rung 3's encoder is `gte-multilingual-base`, fine-tuned, at 0.6044 dev micro
+  R@10** — +0.0707 over rung 2's best and +0.1320 over rung 1's, with no stage
+  after candidate generation turned on yet.
+- **The GPU is where the points are.** Index size is spent: 2.2× the corpus for
+  +0.008. Any further budget belongs in training or in the stages after
+  retrieval, not in more documents.
+- **Fine-tuning trades the zero-shot band for the head**, which is the opposite
+  of this project's stated reason for choosing retrieval over classification.
+  The trade is currently worth it on aggregate — +0.067 fused against −0.023 on
+  a band carrying 8.9% — but it means the retrieval design's own selling point
+  now rests on the reranker and the adjudicator rather than on the tower.
+- **880 dev labels, 7.1% of gold assignments, are unreachable by any document
+  corpus**, and no amount of GPU changes that: it is a property of the
+  benchmark, and it bounds every leaderboard system that ranks by document
+  similarity.
+- **The fusion weights are still `multilingual-e5-base`'s**, held fixed since
+  rung 1 so that this rung measures the fine-tune rather than a retune. With the
+  tower now nearly twice as strong as the weights assume, 0.6044 is a floor, and
+  retuning them is the cheapest experiment left in the project.

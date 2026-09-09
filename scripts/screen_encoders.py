@@ -56,7 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from llms4subjects.artifacts import EMBEDDING_STAGE, ArtifactStore  # noqa: E402
 from llms4subjects.config import ExperimentConfig, load_experiment  # noqa: E402
-from llms4subjects.corpus import MissingDataset, frequency_bands  # noqa: E402
+from llms4subjects.corpus import frequency_bands  # noqa: E402
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.models import load_registry  # noqa: E402
 from llms4subjects.pipeline import combine, retrieve  # noqa: E402
@@ -68,7 +68,11 @@ from llms4subjects.stages.evaluator import (  # noqa: E402
     evaluate,
 )
 from compare_rungs import SCHEMA  # noqa: E402
-from run_experiment import FORBIDDEN_SPLIT, load_inputs  # noqa: E402
+from run_experiment import (  # noqa: E402
+    FORBIDDEN_SPLIT,
+    INPUT_ERRORS,
+    load_inputs,
+)
 
 # Model selection is micro Recall@10 on dev, everywhere in this project.
 SELECTION_K = 10
@@ -167,11 +171,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         inputs = load_inputs(configs[0], args.split, args.limit)
-    except MissingDataset as error:
-        print(error)
-        return 1
-    except KeyError as error:
-        print(error.args[0] if error.args else error)
+    except INPUT_ERRORS as error:
+        # `KeyError` is an unknown --split, and quotes its argument; the
+        # rest already read as sentences.
+        print(error.args[0] if isinstance(error, KeyError) else error)
         return 1
 
     device = select_device(args.device)

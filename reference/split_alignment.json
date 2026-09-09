@@ -1,0 +1,59 @@
+{
+  "corpora": {
+    "all_train": {
+      "duplicate_ids": 45,
+      "merged_subjects": 25,
+      "records": 70588,
+      "revision": "cf8a8fa6c87b",
+      "rows": 70633
+    },
+    "core_train": {
+      "duplicate_ids": 0,
+      "merged_subjects": 0,
+      "records": 32043,
+      "revision": "1e8d61fa6f6f",
+      "rows": 32043
+    }
+  },
+  "data_revision": "8204b08003d4",
+  "excluded": {
+    "all_train": {
+      "core_dev": [
+        "3A1758457511",
+        "3A1822687810",
+        "3A1839844787",
+        "3A1869768906",
+        "3A684229048",
+        "3A684958201",
+        "3A79436070X",
+        "3A798384123",
+        "3A837429285"
+      ],
+      "core_test": []
+    },
+    "core_train": {
+      "core_dev": [],
+      "core_test": []
+    }
+  },
+  "held_out": {
+    "core_dev": {
+      "records": 5354
+    },
+    "core_test": {
+      "records": 4910
+    }
+  },
+  "overlaps": {
+    "all_train": {
+      "core_dev": 9,
+      "core_test": 0
+    },
+    "core_train": {
+      "core_dev": 0,
+      "core_test": 0
+    }
+  },
+  "schema": 1,
+  "verified": "2026-09-08"
+}

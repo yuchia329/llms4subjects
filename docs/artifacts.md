@@ -99,6 +99,14 @@ as a side effect of a run. It holds:
 | `label_translations.json` | English for all 79,224 distinct German label strings | `scripts/translate_labels.py` |
 | `model_releases.json` | every model the project loads, its release date and the revision it is pinned to | `scripts/verify_model_releases.py --force` |
 | `screens/rung1.json`, `screens/rung2.json` | four encoders' scores, bands and wall clock at each index size | `scripts/screen_encoders.py --json` |
+| `rung3-report.json` | the two shortlisted encoders at the all-subjects index, off the shelf and fine-tuned, with the adapters that produced the second row | `scripts/rung3_report.py --json` |
+| `split_alignment.json` | which corpora are clear to index, and which held-out records they carry | `scripts/verify_split_alignment.py` |
+
+`rung3-report.json` is deliberately not written under the screens' schema. A
+screen is one row per encoder and `scripts/compare_rungs.py` compares two of
+them; the rung-3 document is *two* rows per encoder, trained and untrained,
+which share a model name. Under the screen schema it would load and
+`Screen.row("BAAI/bge-m3")` would silently return whichever row came first.
 
 The screens are here rather than under `artifacts/` because they are read by a
 *later* run: `scripts/compare_rungs.py` answers whether the encoder ranking
@@ -109,7 +117,19 @@ re-run that changes a number is a finding rather than a refresh.
 
 The distinction is the point. A cached artifact is a saved computation and can
 be deleted at any time; a frozen reference is a *decision*, and recomputing it
-would change the meaning of every results table that cites it. Nothing but the
+would change the meaning of every results table that cites it.
+
+**One sharp edge in the cache, worth knowing before a rebuild.** Every artifact
+key mixes in the dataset revision, and that revision digests every split file
+that *exists* — so building `all_train.csv` for the first time changes it, and
+several gigabytes of perfectly valid vectors end up under keys nothing will ask
+for again. Nothing is wrong with them: each matrix is named by a digest of the
+exact texts it holds, and building a new split changes none of the old ones.
+Rung 3 paid for this once. If it comes up again, the cheap move is to re-key the
+directories under `artifacts/embeddings/` rather than to spend an afternoon
+re-encoding; the honest fix is to drop the dataset revision from the embedding
+stage's key, since the filename already identifies the texts, and that is a
+change to `STAGE_DEPENDENCIES` nobody has needed enough to make. Nothing but the
 script in the right-hand column writes any of the three, so a change of
 reference leaves a commit rather than happening as a by-product of a run.
 
@@ -121,6 +141,41 @@ For the bands, that by-product would be adding data to the index:
 `scripts/build_eval_fixture.py --force` is the same shape for the committed
 evaluation fixture in `tests/fixtures/`, which pins the local evaluator to the
 organizers' scorer.
+
+### The split alignment
+
+Rung 3 indexes the all-subjects training split, which is a second shared-task
+track. It is 38,545 labelled documents on top of tib-core train, and the reason
+they are free is that the tracks are split-aligned — a record held out of
+tib-core is held out of all-subjects too. That is a claim about the data, so it
+is checked:
+
+    python scripts/verify_split_alignment.py            # report and write
+    python scripts/verify_split_alignment.py --force    # rewrite the reference
+
+It holds for the gold test split, exactly: **none of the 4,910 `core_test`
+records is anywhere in `all_train`.** It does not hold for dev — **nine
+`core_dev` records are in the all-subjects training split** — so the attestation
+names those nine by id and `scripts/run_experiment.py` drops them from every
+index. 70,588 documents available, 70,579 indexed.
+
+Two further things the same file records, because both are properties of the
+corpus rather than of a run:
+
+- **The duplicates.** `all_train` is 70,633 rows under 70,588 ids: 45 documents
+  the release files twice, 20 of them with differing gold. They are merged into
+  one document carrying the union of their assignments — 25 assignments that
+  keeping either row alone would have dropped — because two copies of one
+  document vote twice in every neighbour harvest.
+- **Which corpora were checked at all.** The attestation is keyed to the dataset
+  revision, so rebuilding the data invalidates it and the next run refuses to
+  index an unchecked corpus rather than assuming the last check still applies.
+
+This is the one mechanism in the project that exists so that a run does *not*
+have to read something: verifying alignment at run time would mean opening the
+gold test split on every run to prove that it is not being opened.
+`scripts/verify_split_alignment.py` is the only thing that opens it before
+ticket 17, and it reads the record ids and nothing else.
 
 ### The translation cache
 
@@ -216,7 +271,10 @@ A rung of the experiment ladder is a committed YAML file in
 | `configs/rung2-e5-large.yaml` | the same 32,043 | `multilingual-e5-large` — the same screen, one rung up |
 | `configs/rung2-bge-m3.yaml` | the same 32,043 | `bge-m3` — the same screen, one rung up |
 | `configs/rung2-gte-base.yaml` | the same 32,043 | `gte-multilingual-base` — the same screen, one rung up |
-| `configs/rung3.yaml` | 70,588 documents (all-subjects train) | fine-tuned adapter, full pipeline |
+| `configs/rung3.yaml` | 70,579 documents (all-subjects train) | `bge-m3`, fine-tuned |
+| `configs/rung3-untrained.yaml` | the same 70,579 | `bge-m3`, off the shelf — the control on the fine-tune |
+| `configs/rung3-gte-base.yaml` | the same 70,579 | `gte-multilingual-base`, fine-tuned |
+| `configs/rung3-gte-base-untrained.yaml` | the same 70,579 | `gte-multilingual-base`, off the shelf |
 
 Each rung-2 file is its rung-1 counterpart with `index.size` set to `null` —
 and `index.stratify` to `false`, which a full index makes inert — and nothing
@@ -260,6 +318,72 @@ Training reads every document of `index.corpora` and ignores `index.size`; see
 An enabled prior with no fitted head raises `MissingGroupPrior` naming the
 command above, rather than quietly skipping the boost.
 
+### The fine-tuned adapters
+
+`encoder.adapter` names a directory of LoRA deltas, and rung 3 is the only rung
+that has one. Producing it is three commands on two machines, and the split
+between them is deliberate: everything that can be computed from artifacts that
+already exist is computed on the Mac, and the GPU host receives files.
+
+    # 1. Mine the untrained retriever's own mistakes, locally — the same
+    #    retrieval the rung-2 screen already made, over the same texts.
+    python scripts/mine_hard_negatives.py configs/rung2-bge-m3.yaml
+    python scripts/mine_hard_negatives.py configs/rung2-gte-base.yaml
+
+    # 2. Send code and the mined negatives to the host, and train there.
+    rsync -az artifacts/hard_negatives/ nlp2:~/projects/llms4subjects/artifacts/hard_negatives/
+    ssh nlp2 'cd ~/projects/llms4subjects && \
+      PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+      .venv/bin/python -u scripts/train_encoder.py configs/rung3.yaml \
+        --negatives-from configs/rung2-bge-m3.yaml \
+        --batch-size 8 --negatives 2 --gradient-checkpointing \
+        > artifacts/adapters/bge-m3-contrastive-v1/train.log 2>&1'
+
+    # 3. Bring the adapters back and score them here.
+    rsync -az nlp2:~/projects/llms4subjects/artifacts/adapters/ artifacts/adapters/
+    python scripts/rung3_report.py \
+        --pair configs/rung3-untrained.yaml configs/rung3.yaml \
+        --pair configs/rung3-gte-base-untrained.yaml configs/rung3-gte-base.yaml \
+        --against reference/screens/rung2.json --json reference/rung3-report.json
+
+`artifacts/hard_negatives/<key>/negatives-<split>-<depth>.jsonl` is one record
+per line, the fused ranking as it came, gold included: filtering is
+`llms4subjects.finetune.hard_negatives`, which drops the record's whole gold set
+rather than one pair's positive, so the artifact is not committed to one
+definition of "negative". Its key is the retrieval configuration that produced
+it, which is what stops one encoder's confusions being used to train another.
+
+`artifacts/adapters/<run>/` is what peft writes plus one file this project adds:
+
+| file | what it is |
+|---|---|
+| `adapter_config.json`, `adapter_model.safetensors` | the LoRA deltas, as peft writes them |
+| `training.json` | the base model and **revision** the deltas belong on, the dataset revision, the artifact key of the negatives, every hyperparameter, the per-epoch losses, and the host and wall clock |
+| `train.log` | the run's console output |
+
+`training.json` is the reason the adapter is an artifact rather than a
+checkpoint: `stages.encoders.load` reads it *before* fetching any weights and
+raises `AdapterMismatch` if the adapter was trained over another model or
+another revision of one. Applied to the wrong weights, LoRA deltas are noise
+that nothing downstream could detect — the vectors still come out normalised,
+the retrievers still rank them, and the only symptom is a worse number.
+
+Applied, the deltas are merged into the base weights, so a fine-tuned encoder
+is the base model's own forward pass at the base model's own speed, and the
+trained and untrained rows of rung 3 are the same code path.
+
+**The batch size is a property of the host, not of the method.** `nlp2`'s A100
+is shared, and a vLLM process held 74.7 GB of its 80 through both runs, so the
+settings' defaults of 32 pairs and 4 mined negatives do not fit and the runs
+above pass 8 and 2. Three things make that survivable and none of them is
+silent: the frozen base is held in bfloat16 while the adapters stay in fp32,
+which halves the weights' footprint; gradient checkpointing trades compute for
+activation memory; and a batch that still cannot fit is dropped, counted, and
+reported as `skipped_batches` in the manifest rather than ending a two-hour run
+in a traceback. Both rung-3 runs report zero skipped. A batch of 8 is the one
+place the rung is knowingly under-powered — in-batch negatives are most of the
+contrastive signal — so its result is a floor.
+
 ## The two environments
 
 | environment | file | what runs there |
@@ -301,7 +425,20 @@ same one command used locally, so there is no hand-copied snapshot to go stale:
     ssh nlp2 'cd ~/projects/llms4subjects && .venv/bin/python build_tibkat_csv.py'
 
 The rebuild must report the same record and label counts as the local one; that
-equality is what lets a checkpoint trained there be scored here.
+equality is what lets a checkpoint trained there be scored here. Rung 3 needs
+the all-subjects split on the host as well, since the negatives were mined
+against a dataset revision that includes it:
+
+    ssh nlp2 'cd ~/projects/llms4subjects && \
+      .venv/bin/python build_tibkat_csv.py --subset all-subjects --skip-gnd'
+
+`scripts/train_encoder.py` refuses to start if the host's dataset revision is
+not the one the negatives were mined under, so this is checked rather than
+remembered.
+
+Send the mined hard negatives too — they are the one artifact training reads:
+
+    rsync -az artifacts/hard_negatives/ nlp2:~/projects/llms4subjects/artifacts/hard_negatives/
 
 Bring training artifacts back the same way, into the gitignored artifact tree:
 

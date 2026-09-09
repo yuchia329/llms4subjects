@@ -37,10 +37,28 @@ from llms4subjects.corpus import (  # noqa: E402
 )
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.pipeline import predict  # noqa: E402
+from llms4subjects.splits import (  # noqa: E402
+    ConflictingRecords,
+    SplitAlignmentUnverified,
+    clear_index,
+    merge,
+    require_alignment,
+)
 from llms4subjects.stages.evaluator import OFFICIAL_KS, evaluate, render  # noqa: E402
 from llms4subjects.stages.submission import write_submission  # noqa: E402
 
 VOCABULARY = "tib-core"
+
+# Everything `load_inputs` raises that is a sentence for the user rather than a
+# traceback: the dataset is missing, the split name is unknown, the corpus about
+# to be indexed is unchecked, or it holds two documents under one id. Harnesses
+# import this rather than listing them, so a new refusal reaches all of them.
+INPUT_ERRORS = (
+    MissingDataset,
+    SplitAlignmentUnverified,
+    ConflictingRecords,
+    KeyError,
+)
 
 # The one split this script will not score. See ticket 17.
 FORBIDDEN_SPLIT = "core_test"
@@ -61,20 +79,52 @@ class Inputs:
     name_qualifiers: dict
     records: list
     index_records: list
+    # How the index corpus was assembled, for the one line a run prints about
+    # it: rows read, documents kept after merging the release's duplicate
+    # filings, and held-out documents dropped. All three are zero on
+    # `core_train` and none of them is on `all_train`.
+    rows: int = 0
+    duplicates: int = 0
+    dropped: int = 0
+
+    @property
+    def assembly(self) -> str:
+        """One sentence on what the index corpus lost between file and memory."""
+        parts = []
+        if self.duplicates:
+            parts.append(f"{self.duplicates} document(s) filed twice, merged")
+        if self.dropped:
+            parts.append(f"{self.dropped} held-out document(s) dropped")
+        return "; ".join(parts)
 
 
 def load_inputs(config, split: str, limit: int | None = None) -> Inputs:
-    """The dataset a config asks for, or `MissingDataset` / `KeyError` saying why."""
+    """The dataset a config asks for, or `MissingDataset` / `KeyError` saying why.
+
+    The index corpus is assembled here and nowhere else, which is what makes the
+    three things that happen to it happen to every harness: the corpora are
+    checked against the committed split alignment, the documents the release
+    files twice are merged into one, and any held-out record inside them is
+    dropped. A harness that concatenated the splits itself would index 70,633
+    documents where this indexes 70,579, nine of them from the dev split it is
+    about to be scored on.
+    """
     revision = data_revision()
     records = load_split(split)
+    excluded = require_alignment(config.index.corpora)
+    corpus = merge(
+        record for name in config.index.corpora for record in load_split(name)
+    )
+    index_records = clear_index(corpus.records, excluded)
     return Inputs(
         revision=revision,
         vocabulary=load_vocabulary(VOCABULARY),
         name_qualifiers=load_name_qualifiers(VOCABULARY),
         records=records[:limit] if limit else records,
-        index_records=[
-            record for corpus in config.index.corpora for record in load_split(corpus)
-        ],
+        index_records=index_records,
+        rows=corpus.rows,
+        duplicates=corpus.duplicate_ids,
+        dropped=len(corpus.records) - len(index_records),
     )
 
 
@@ -99,12 +149,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         inputs = load_inputs(config, args.split, args.limit)
-    except MissingDataset as error:
-        print(error)
-        return 1
-    except KeyError as error:
-        # An unknown --split; `corpus` names the ones it knows.
-        print(error.args[0] if error.args else error)
+    except INPUT_ERRORS as error:
+        # `KeyError` is an unknown --split, and quotes its argument; the rest
+        # already read as sentences.
+        print(error.args[0] if isinstance(error, KeyError) else error)
         return 1
 
     revision = inputs.revision
@@ -122,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         f"predicting {len(records)} {args.split} records against {indexed} of the "
         f"{len(index_records)} documents in {', '.join(config.index.corpora)}"
     )
+    if inputs.assembly:
+        print(f"index corpus: {inputs.rows} rows read, {inputs.assembly}")
 
     store = ArtifactStore(args.artifacts, data_revision=revision)
     started = time.perf_counter()

@@ -53,6 +53,14 @@ def dev_records():
         pytest.skip(str(error))
 
 
+def all_subjects_records():
+    """The rung-3 index corpus, which only exists after the second build."""
+    try:
+        return load_split("all_train")
+    except MissingDataset as error:
+        pytest.skip(str(error))
+
+
 def test_the_two_declarations_of_the_unseen_band_agree():
     """`corpus` reads the reference; a stage may not import `corpus`.
 
@@ -128,6 +136,36 @@ def test_growing_the_index_would_move_labels_but_the_frozen_bands_do_not():
     assert frequency_bands() == frozen
     for code, (frozen_band, would_be) in moved.items():
         assert frequency_bands()[code] == frozen_band != would_be
+
+
+def test_the_rung_3_corpus_does_not_touch_the_frozen_bands():
+    """Ticket 15's own version of the property, over the corpus it indexes.
+
+    The all-subjects split is 38,545 documents on top of tib-core train, and it
+    is the largest thing this project ever counts labels over. Reporting its
+    effect on the bands is `scripts/rung3_report.py`'s job and is a table of its
+    own; what must not happen is the bands themselves moving, because every
+    band figure at rungs 1 and 2 was measured before the corpus existed.
+    """
+    frozen = frequency_bands()
+    boundaries = frequency_band_reference()["boundaries"]
+
+    grown = Counter()
+    for record in all_subjects_records():
+        grown.update(dict.fromkeys(record.subjects).keys())
+
+    reached = [
+        code
+        for code in grown
+        if frozen.get(code, UNSEEN_BAND) == UNSEEN_BAND
+        and band_for_count(grown[code], boundaries) != UNSEEN_BAND
+    ]
+    assert reached, "a corpus that reaches no unseen label would make this vacuous"
+
+    # Read, not derived: every one of those labels is still zero-shot here.
+    assert frequency_bands() == frozen
+    assert all(frequency_bands().get(code, UNSEEN_BAND) == UNSEEN_BAND for code in reached)
+    assert frequency_band_reference()["frozen_from"]["split"] == "core_train"
 
 
 def test_the_evaluator_bands_a_label_by_the_frozen_reference_not_by_the_data():

@@ -25,6 +25,14 @@ scipy==1.14.1
 # never loads a translation model, so no run imports this.
 sentencepiece==0.2.0
 
+# Parameter-efficient fine-tuning. In the shared file rather than the GPU one
+# because both environments need it: the host trains the LoRA adapters and the
+# Mac applies them, folding the deltas into the base weights before indexing.
+# `accelerate` comes with it — peft imports it — so it is pinned here too rather
+# than floating to whatever the resolver picks on each machine.
+peft==0.14.0
+accelerate==1.1.1
+
 # Retrieval
 faiss-cpu==1.9.0.post1
 rank-bm25==0.2.2

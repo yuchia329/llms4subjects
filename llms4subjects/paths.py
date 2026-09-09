@@ -35,6 +35,12 @@ LABEL_TRANSLATIONS_FILE = REFERENCE_DIR / "label_translations.json"
 # `python scripts/verify_model_releases.py --force`; see docs/artifacts.md.
 MODEL_RELEASES_FILE = REFERENCE_DIR / "model_releases.json"
 
+# Which corpora are clear to index, checked against the held-out splits and
+# committed so that no run has to open the gold test set to prove it is not in
+# the index. Regenerated only by `python scripts/verify_split_alignment.py`; see
+# docs/artifacts.md.
+SPLIT_ALIGNMENT_FILE = REFERENCE_DIR / "split_alignment.json"
+
 SPLIT_FILES = {
     "core_train": TIBKAT_DIR / "core_train.csv",
     "core_dev": TIBKAT_DIR / "core_dev.csv",

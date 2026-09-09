@@ -27,6 +27,10 @@ STAGE_MODULES = [
 
 STAGE_DIR = Path(__file__).resolve().parent.parent / "llms4subjects" / "stages"
 
+# Training is not one of those boundaries, which is why `llms4subjects.finetune`
+# sits outside this package: it produces an adapter that `encoders` loads, and
+# it never runs inside `predict`.
+
 # What opens or reads a file. `json.loads` is deliberately not here: it parses a
 # string, and a stage that parses an API response or a model's answer is not
 # reading anything. The file half of `json.loads(path.read_text())` is caught by

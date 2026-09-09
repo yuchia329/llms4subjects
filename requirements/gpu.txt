@@ -12,7 +12,7 @@
 
 torch==2.5.1+cu124
 
-# Parameter-efficient fine-tuning, per docs/spec.md user story 43.
-accelerate==1.1.1
-peft==0.14.0
+# Training-side dependencies, per docs/spec.md user story 43. `peft` and
+# `accelerate` are in base.txt: the adapters they write here are applied on the
+# Mac.
 datasets==3.1.0

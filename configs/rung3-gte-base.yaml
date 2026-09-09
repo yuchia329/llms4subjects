@@ -1,0 +1,67 @@
+# Rung 3 with `Alibaba-NLP/gte-multilingual-base`, fine-tuned (ticket 15).
+#
+# The second of the two encoders rung 2 shortlisted. It finished second there by
+# 0.0039 while *leading* at the candidate ceiling — 0.7939 against 0.7878 at
+# R@100 — so which of the two is first is not a measurement this project claims,
+# and both get the GPU.
+#
+# One line apart from configs/rung3-gte-base-untrained.yaml — the adapter — and
+# one encoder apart from configs/rung3.yaml.
+#
+#   python scripts/mine_hard_negatives.py configs/rung2-gte-base.yaml
+#   # on nlp2, after rsyncing code and the mined negatives:
+#   .venv/bin/python -u scripts/train_encoder.py configs/rung3-gte-base.yaml \
+#       --negatives-from configs/rung2-gte-base.yaml
+name: rung3-gte-base-finetuned
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+  # The one field that separates this file from
+  # configs/rung3-gte-base-untrained.yaml. It is part of the `encoder` section,
+  # so it keys the vector cache: the trained and untrained rows cannot read each
+  # other's embeddings.
+  adapter: artifacts/adapters/gte-multilingual-base-contrastive-v1
+
+index:
+  # `all_train` already contains every `core_train` record plus 38,545 more, so
+  # naming both would index each core record twice. 70,588 documents, of which
+  # 70,579 are indexed: nine are `core_dev` records that the all-subjects split
+  # carries and reference/split_alignment.json names.
+  corpora: [all_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    # Still the weights tuned for `multilingual-e5-base` at rung 1, held for the
+    # reason configs/rung3.yaml holds them: a retune inside this comparison
+    # would be reported as what fine-tuning bought.
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+notes: >
+  Rung 3, `gte-multilingual-base` fine-tuned. Its lexical column is the control
+  on the whole rung: this encoder emits no sparse term weights, so BM25 over the
+  label strings runs instead and must be identical trained and untrained.

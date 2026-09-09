@@ -41,12 +41,16 @@ from llms4subjects.artifacts import (  # noqa: E402
 )
 from llms4subjects.config import load_experiment  # noqa: E402
 from llms4subjects.contracts import CandidateList, Record  # noqa: E402
-from llms4subjects.corpus import MissingDataset, frequency_bands  # noqa: E402
+from llms4subjects.corpus import frequency_bands  # noqa: E402
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.pipeline import combine, retrieve  # noqa: E402
 from llms4subjects.stages import encoders, group_prior  # noqa: E402
 from llms4subjects.stages.evaluator import BANDS, evaluate  # noqa: E402
-from run_experiment import FORBIDDEN_SPLIT, load_inputs  # noqa: E402
+from run_experiment import (  # noqa: E402
+    FORBIDDEN_SPLIT,
+    INPUT_ERRORS,
+    load_inputs,
+)
 
 # The k values the table reports. 10 is what model selection reads and 50 is
 # the submission; the candidate ceiling is not among them because the boost
@@ -93,11 +97,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         inputs = load_inputs(config, args.split, args.limit)
-    except MissingDataset as error:
-        print(error)
-        return 1
-    except KeyError as error:
-        print(error.args[0] if error.args else error)
+    except INPUT_ERRORS as error:
+        # `KeyError` is an unknown --split, and quotes its argument; the
+        # rest already read as sentences.
+        print(error.args[0] if isinstance(error, KeyError) else error)
         return 1
 
     device = select_device(args.device)
