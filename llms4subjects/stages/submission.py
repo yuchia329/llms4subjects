@@ -16,6 +16,11 @@ of them fail loudly on their own: a blank language segment collapses two path
 components into one, and a duplicate record silently overwrites its earlier
 file. Failing here costs a run; failing quietly costs a wrong number.
 
+`write_gold_tree` is the other side of the same contract, added by ticket 17:
+the scorer pairs two parallel trees, and the gold one has to be written from
+this project's own splits because the release ships the test set with its
+annotations hidden.
+
 Implemented by ticket 03.
 """
 
@@ -25,10 +30,16 @@ import json
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from ..contracts import CODES_PER_RECORD, Cell, Code, Prediction, cell_of
+from ..contracts import CODES_PER_RECORD, Cell, Code, Prediction, Record, cell_of
 
 # The property the shared task is about, and the only key in a submission file.
 SUBJECT_FIELD = "dcterms:subject"
+
+# The gold side is JSON-LD, and their reader takes the subjects from the last
+# member of `@graph` — so that member's position is load-bearing where the rest
+# of the document is decoration. The id URI is the one the release publishes.
+GRAPH_FIELD = "@graph"
+RECORD_URI = "https://www.tib.eu/en/suchen/id/TIBKAT:{id}"
 
 
 def write_submission(
@@ -60,6 +71,67 @@ def write_submission(
         path.write_text(
             json.dumps({SUBJECT_FIELD: list(codes)}, indent="\t", ensure_ascii=False)
             + "\n",
+            encoding="utf-8",
+        )
+        written.append(path)
+
+    return written
+
+
+def write_gold_tree(
+    records: Sequence[Record], destination: str | Path
+) -> list[Path]:
+    """The other half of the organizers' layout: the gold labels, as JSON-LD.
+
+    Their scorer reads gold and predictions from two parallel trees, so running
+    it against this project's own split means writing the gold side too — the
+    release ships the test split with its annotations hidden, and the clean CSVs
+    are where the answers live. Ticket 17 is the only caller: it is what makes
+    "scored by the official scorer" a fact rather than a claim about a local
+    evaluator that agrees with it on a fixture.
+
+    The surrounding record is reproduced rather than reduced to the one field
+    their reader looks at, so a change to what it reads fails here instead of
+    quietly scoring zero. A record with no gold subjects is written anyway and
+    their reader drops it, exactly as `evaluator.evaluate` does.
+    """
+    root = Path(destination)
+    written: list[Path] = []
+    seen: dict[str, Path] = {}
+
+    for record in records:
+        if not record.type or not record.lang:
+            raise ValueError(
+                f"record {record.id!r} has the blank cell "
+                f"{(record.type, record.lang)!r}; a blank segment would "
+                "collapse the layout the scorer reads"
+            )
+        directory = root / record.type / record.lang
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{record.id}.jsonld"
+
+        if record.id in seen:
+            raise ValueError(
+                f"duplicate record {record.id!r}: already written to "
+                f"{seen[record.id]}"
+            )
+        seen[record.id] = path
+
+        path.write_text(
+            json.dumps(
+                {
+                    GRAPH_FIELD: [
+                        {"@id": RECORD_URI.format(id=record.id)},
+                        {
+                            "@type": "bibo:Document",
+                            SUBJECT_FIELD: [
+                                {"@id": code} for code in record.subjects
+                            ],
+                        },
+                    ]
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         written.append(path)

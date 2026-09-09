@@ -76,6 +76,7 @@ python scripts/coverage_curve.py configs/rung1.yaml    # coverage against precis
 python scripts/translate_labels.py --report           # translation cache coverage
 python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
 python scripts/verify_split_alignment.py              # which corpora are clear to index
+python scripts/final_test.py --rehearse               # the final-run harness, on dev
 pytest                                                # contract and invariant tests
 ```
 
@@ -85,6 +86,15 @@ number in [docs/results.md](docs/results.md) comes from one code path however
 the model that produced it was built. `--limit N` shortens a run, `--submission
 DIR` also writes the organizers' tree, and `--split core_test` is refused —
 the gold test split is opened once, at the end of the project.
+
+That one run is `scripts/final_test.py`, and it is the only thing in the
+repository that reads `core_test`. The configuration it scores is digested into
+`reference/test_plan.json` and committed *before* the split is read, so a row
+whose configuration moved since is refused rather than scored; the receipt in
+`reference/test_run.json` is written after, so a second read is a refusal that
+names the first. Its headline figure comes from the organizers' own script over
+a submission tree rather than from the local evaluator, which the same run
+checks against it. See [llms4subjects/testset.py](llms4subjects/testset.py).
 
 ## Dataset
 

@@ -41,6 +41,13 @@ MODEL_RELEASES_FILE = REFERENCE_DIR / "model_releases.json"
 # docs/artifacts.md.
 SPLIT_ALIGNMENT_FILE = REFERENCE_DIR / "split_alignment.json"
 
+# The configurations ticket 17's single test run will score, digested and
+# committed *before* the gold test split is read, and the receipt written after
+# it has been. Both are `scripts/final_test.py`'s; see llms4subjects/testset.py
+# for why there are two of them and what each refuses.
+TEST_PLAN_FILE = REFERENCE_DIR / "test_plan.json"
+TEST_RUN_FILE = REFERENCE_DIR / "test_run.json"
+
 SPLIT_FILES = {
     "core_train": TIBKAT_DIR / "core_train.csv",
     "core_dev": TIBKAT_DIR / "core_dev.csv",

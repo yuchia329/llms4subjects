@@ -1,0 +1,104 @@
+# The configuration the gold test split is opened for, once (ticket 17).
+#
+#   python scripts/final_test.py --fix-plan   # digest it, and commit that
+#   python scripts/final_test.py --rehearse   # the same harness, on dev
+#   python scripts/final_test.py              # the run itself
+#
+# Nothing here is a new decision. Every field is the value some earlier rung
+# measured on the 5,354 dev records and committed to a config of its own; this
+# file is those decisions in one place, so that the run is described by a digest
+# in reference/test_plan.json rather than by a sentence in a results section.
+#
+# Where each part comes from, and what the alternative scored:
+#
+# - **Encoder, index and fusion: configs/rung3-gte-base.yaml, unchanged.**
+#   `gte-multilingual-base` fine-tuned at the 70,579-document all-subjects
+#   index, 0.6044 dev micro R@10 — the best figure the project measured, +0.0135
+#   over the other fine-tuned encoder and +0.0707 over rung 2's best. The fusion
+#   weights are still `multilingual-e5-base`'s, held fixed since rung 1 so that
+#   every rung measured what it changed; docs/results.md calls retuning them the
+#   cheapest experiment left, and not taking it here is deliberate — a retune
+#   would be a decision this run has no dev measurement for.
+#
+# - **Reranker: configs/rung1-rerank-base.yaml's tuned settings.** The smaller
+#   of the two screened cross-encoders, the heading as the query, the
+#   cross-encoder's order *fused* with the retrieval order rather than replacing
+#   it. Replacing loses (−0.0619 micro R@10); fusing gains +0.0337. Ticket 12
+#   named this file as the one ticket 17 should consider, because the pass costs
+#   about four hours and is paid once here instead of on every dev iteration.
+#
+# - **Group prior: off.** +0.0053 dev micro R@10 for a stage with its own
+#   training step and a measured −0.0018 on the zero-shot band, which is the
+#   band this design exists to reach. configs/rung1-prior.yaml is its ablation.
+#
+# - **Adjudication: off, and a row of its own.** configs/test-adjudicate.yaml is
+#   this file with the stage turned on. It is never merged into the headline:
+#   the stage has no dev measurement at all (ticket 13's two scored rows await
+#   an API credential), so a headline containing it would be a number nobody
+#   had grounds to expect.
+name: test-gte-base-finetuned-rerank
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+  # The rung-3 fine-tune, trained on nlp2 and pulled back as an artifact. Part
+  # of the `encoder` section, so it keys the vector cache: this run reads the
+  # vectors rung 3 already paid for.
+  adapter: artifacts/adapters/gte-multilingual-base-contrastive-v1
+
+index:
+  # 70,588 documents, of which 70,579 are indexed: nine are `core_dev` records
+  # the all-subjects split carries and reference/split_alignment.json names. No
+  # `core_test` record is in it — that is the attested fact this run rests on,
+  # checked before the split it is about to score was ever opened.
+  corpora: [all_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+reranker:
+  enabled: true
+  # XLM-RoBERTa-base, 278M parameters, released 2023-09-11 and last committed
+  # 2024-06-24 — both inside the 2025-01-31 cutoff, which
+  # reference/model_releases.json records and pins the loaded revision for.
+  model: BAAI/bge-reranker-base
+  max_length: 512
+  batch_size: 32
+  input_k: 100
+  output_k: 50
+  query: label
+  mix: fuse
+  mix_weight: 1.0
+
+notes: >
+  The single test run. Rung 3's fine-tuned `gte-multilingual-base` over the
+  all-subjects index, its 100 fused candidates reordered by the screened
+  cross-encoder in `fuse` mode and cut to the submission's 50. Every value is
+  the dev-selected one from the rung that measured it; nothing here was chosen
+  after the gold split was read, which reference/test_plan.json is the evidence
+  for.

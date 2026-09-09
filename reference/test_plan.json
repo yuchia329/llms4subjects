@@ -1,0 +1,18 @@
+{
+  "schema": "test-plan/1",
+  "fixed": "2026-09-09",
+  "headline": "headline",
+  "rationale": "Rung 3's encoder, fine-tuned, at the all-subjects index (docs/results.md: 0.6044 dev micro R@10, the best measured), with the screened cross-encoder in `fuse` mode, which ticket 12 recommended for exactly this run: +0.0337 dev micro R@10 for one pass paid once. The group prior stays off (+0.005 for a stage with its own training step and a measurable cost to the zero-shot band), and adjudication is a separate labelled row rather than part of the headline, because no dev measurement of it exists.",
+  "rows": {
+    "adjudicated": {
+      "config": "configs/test-adjudicate.yaml",
+      "name": "test-gte-base-finetuned-rerank-adjudicated",
+      "digest": "093578bccaeb"
+    },
+    "headline": {
+      "config": "configs/test.yaml",
+      "name": "test-gte-base-finetuned-rerank",
+      "digest": "f235176597e2"
+    }
+  }
+}

@@ -101,6 +101,8 @@ as a side effect of a run. It holds:
 | `screens/rung1.json`, `screens/rung2.json` | four encoders' scores, bands and wall clock at each index size | `scripts/screen_encoders.py --json` |
 | `rung3-report.json` | the two shortlisted encoders at the all-subjects index, off the shelf and fine-tuned, with the adapters that produced the second row | `scripts/rung3_report.py --json` |
 | `split_alignment.json` | which corpora are clear to index, and which held-out records they carry | `scripts/verify_split_alignment.py` |
+| `test_plan.json` | the configurations the single test run will score, digested before the split is read | `scripts/final_test.py --fix-plan` |
+| `test_run.json` | the receipt: what the test run scored, and the date the gold split was opened | `scripts/final_test.py` |
 
 `rung3-report.json` is deliberately not written under the screens' schema. A
 screen is one row per encoder and `scripts/compare_rungs.py` compares two of
@@ -141,6 +143,30 @@ For the bands, that by-product would be adding data to the index:
 `scripts/build_eval_fixture.py --force` is the same shape for the committed
 evaluation fixture in `tests/fixtures/`, which pins the local evaluator to the
 organizers' scorer.
+
+### The plan and the receipt
+
+These two are a pair, and the order between them is what they are for. Ticket 17
+opens the gold test split once, and "the configuration was chosen before the
+answer was seen" is not a claim prose can carry. So `test_plan.json` digests
+each row's `label_text`, `encoder`, `index`, `retrievers`, `fusion`,
+`group_prior`, `reranker` and `adjudication` — the same sections the artifact
+store calls a prediction's dependencies — and is committed first. The run
+refuses a row the plan does not name and a row whose digest has moved.
+
+`test_run.json` is written after, and a second run is refused unless it carries
+`--justify "…"`, which is then recorded beside the read it supersedes.
+`--fix-plan` refuses once the receipt exists, so a decision cannot be re-dated
+after its answer. Neither file prevents anything; each makes it leave a mark in
+git.
+
+    python scripts/final_test.py --fix-plan   # write the plan, then commit it
+    python scripts/final_test.py --rehearse   # the same harness, on dev, no receipt
+    python scripts/final_test.py              # the run itself
+
+The prose about the digest ignoring `name` and `notes` is in
+`llms4subjects/testset.py`: a refusal that fired on a typo fix would be switched
+off by the next person who hit it.
 
 ### The split alignment
 

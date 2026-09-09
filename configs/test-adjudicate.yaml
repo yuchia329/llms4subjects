@@ -1,0 +1,96 @@
+# The test run's adjudication row (ticket 17), which is never the headline.
+#
+#   export ANTHROPIC_API_KEY=...
+#   python scripts/final_test.py --row adjudicated
+#
+# configs/test.yaml with the last stage turned on, and identical in every other
+# section, so the difference between the two rows is the language model and
+# nothing else. It is a separate row for a reason that is not presentational:
+# ticket 13 built the stage, its cache, its constraint and its rejection log,
+# but its two scored dev rows await an API credential, so this project has *no*
+# measurement of what the stage is worth. A headline that contained an unmeasured
+# stage would be a number nobody had grounds to expect, and docs/spec.md's story
+# 3 spends the test split exactly once.
+#
+# What is known about it is a ceiling rather than a result: routing the
+# least-confident fifth caps the achievable gain at +0.046 micro R@10, because
+# the routed subset holds 17.05% of the dev split's gold assignments and its own
+# R@100 — which the stage cannot exceed, since it may reorder and nothing else —
+# is 0.5325. See docs/results.md, "What the stage can possibly be worth".
+#
+# The appendix row docs/spec.md allows — the same pipeline on a *current* model,
+# to price eighteen months of model progress — is this file with
+# `adjudication.appendix: true` and a current model, which
+# `scripts/verify_model_releases.py` must first carry in `API_MODELS` with
+# `appendix=True`. That is the one thing that lets the registry hold a model the
+# 2025-01-31 cutoff does not cover, and no such model is registered yet.
+name: test-gte-base-finetuned-rerank-adjudicated
+
+encoder:
+  name: Alibaba-NLP/gte-multilingual-base
+  max_length: 512
+  batch_size: 32
+  adapter: artifacts/adapters/gte-multilingual-base-contrastive-v1
+
+index:
+  corpora: [all_train]
+  size: null
+  stratify: false
+  seed: 42
+
+label_text:
+  qualifiers: parenthetical
+  include_definition: false
+  bilingual: true
+
+retrievers:
+  knn:
+    enabled: true
+    neighbours: 20
+    top_k: 100
+    weight: 1.5
+  dense:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+  lexical:
+    enabled: true
+    top_k: 100
+    weight: 1.0
+
+fusion:
+  candidates: 100
+  rrf_k: 60
+
+reranker:
+  enabled: true
+  model: BAAI/bge-reranker-base
+  max_length: 512
+  batch_size: 32
+  input_k: 100
+  output_k: 50
+  query: label
+  mix: fuse
+  mix_weight: 1.0
+
+adjudication:
+  enabled: true
+  # Released 2024-10-22, inside the 2025-01-31 cutoff, and the date is carried
+  # by the model id the request names — so this row stays comparable to teams
+  # who competed in January 2025.
+  model: claude-3-5-sonnet-20241022
+  route_fraction: 0.2
+  candidates: 30
+  select: 10
+  prompt_revision: v1
+  document_chars: 4000
+  max_output_tokens: 512
+  temperature: 0.0
+
+notes: >
+  The test run's adjudication row. The same candidates and the same reranked
+  order as configs/test.yaml, with the least-confident fifth of the split shown
+  its top 30 and a model choosing among them. Everything the model returns is
+  checked against the identifiers it was offered; a response naming anything
+  else is rejected whole and logged, so the stage can reorder and can do nothing
+  else. Reported as its own row, never merged into the headline.

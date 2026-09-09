@@ -15,6 +15,9 @@ from types import ModuleType
 
 import pytest
 
+from llms4subjects.contracts import Record
+from llms4subjects.stages import submission
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OFFICIAL_SCRIPT = REPO_ROOT / "official_eval" / "llms4subjects-evaluation.py"
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "evaluation.json"
@@ -51,27 +54,28 @@ def cells(entries: list[dict]) -> dict[str, tuple[str, str]]:
 
 
 def write_gold_tree(entries: list[dict], destination: Path) -> Path:
-    """The gold side of the organizers' layout: JSON-LD, subjects last in `@graph`.
+    """The gold side of the organizers' layout, through the writer the run uses.
 
-    Their reader takes the subjects from `@graph[-1]`, so the shape of the
-    surrounding record is irrelevant to scoring but is reproduced anyway; a
-    fixture that only satisfies the reader would not catch the day it changes.
+    Ticket 17 needs the gold tree in production code — the official scorer reads
+    two parallel trees and the release ships the test split with its annotations
+    hidden — so this delegates rather than keeping a second implementation that
+    could drift from it. Every equivalence test in `tests/test_evaluator.py`
+    therefore runs against the same writer the final test run does.
     """
-    for entry in entries:
-        directory = destination / entry["type"] / entry["lang"]
-        directory.mkdir(parents=True, exist_ok=True)
-        document = {
-            "@graph": [
-                {"@id": f"https://www.tib.eu/en/suchen/id/TIBKAT:{entry['id']}"},
-                {
-                    "@type": "bibo:Document",
-                    "dcterms:subject": [{"@id": code} for code in entry["gold"]],
-                },
-            ]
-        }
-        (directory / f"{entry['id']}.jsonld").write_text(
-            json.dumps(document, ensure_ascii=False)
-        )
+    submission.write_gold_tree(
+        [
+            Record(
+                id=entry["id"],
+                type=entry["type"],
+                lang=entry["lang"],
+                title=entry.get("title", ""),
+                abstract=entry.get("abstract", ""),
+                subjects=tuple(entry["gold"]),
+            )
+            for entry in entries
+        ],
+        destination,
+    )
     return destination
 
 
