@@ -747,10 +747,27 @@ def render_unreadable(facts: Facts) -> str:
 
 
 def render_blocked(blocked: Sequence[Blocked]) -> str:
+    """The planned rows that did not run, and the appendix row that has no config.
+
+    Reported rather than omitted: a stage this project built, tested and never
+    measured is a debt, and a results table that simply lacked the row would
+    read as a pipeline that never had the stage.
+    """
     lines = ["Rows that did not run", "", "| row | config | why |", "|---|---|---|"]
     lines += [
         f"| {row.row} | `{row.config_path}` | {row.reason.splitlines()[0]} |"
         for row in blocked
+    ]
+    lines += [
+        "",
+        "The appendix row docs/spec.md allows — the same pipeline on a current "
+        "model, to price eighteen months of model progress — is owed twice "
+        "over: it needs the credential above *and* an `API_MODELS` entry with "
+        "`appendix=True` in `scripts/verify_model_releases.py`, which is the "
+        "only thing that lets the registry hold a model the 2025-01-31 cutoff "
+        "does not cover. No such model is registered, so the row has no config "
+        "to be planned as, and it is named here instead of implied by its "
+        "absence.",
     ]
     return "\n".join(lines)
 

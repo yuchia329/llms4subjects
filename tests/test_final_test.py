@@ -343,3 +343,13 @@ def test_a_row_the_official_scorer_did_not_score_keeps_the_tables_shape(
     separator = [line for line in lines if line.startswith("|---")][0]
 
     assert row.count("|") == separator.count("|")
+
+
+def test_the_unregistered_appendix_row_is_named_rather_than_left_out(final_test):
+    """A results table missing the row would read as a pipeline without the stage."""
+    rendered = final_test.render_blocked(
+        [final_test.Blocked("adjudicated", "configs/test-adjudicate.yaml", "no key")]
+    )
+
+    assert "appendix" in rendered
+    assert "verify_model_releases.py" in rendered
