@@ -313,3 +313,15 @@ def test_a_record_type_outside_the_five_is_named_too():
 
 def test_a_split_the_official_scorer_can_read_whole_leaves_nothing_named():
     assert unreadable_cells({"a": ("Book", "de"), "b": ("Article", "en")}) == {}
+
+
+def test_a_receipt_carries_the_split_facts_the_caveats_are_read_from(tmp_path):
+    """So the duplicate rows are re-derivable without re-opening the split."""
+    document = receipt(
+        read=date(2026, 9, 9),
+        plan={},
+        rows={},
+        facts={"duplicates": {"indexed": ["a"], "core_train": ["a"]}},
+    )
+
+    assert document["facts"]["duplicates"]["core_train"] == ["a"]

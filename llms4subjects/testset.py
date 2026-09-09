@@ -200,14 +200,22 @@ def receipt(
     plan: Mapping,
     rows: Mapping[str, Mapping],
     records: int = 0,
+    facts: Mapping | None = None,
     earlier: Sequence[Mapping] = (),
 ) -> dict:
-    """What the run scored, as the document that says the split has been opened."""
+    """What the run scored, as the document that says the split has been opened.
+
+    `facts` carries what is true of the split rather than of a row — the
+    duplicate ids and the cells the official scorer cannot read — so that the
+    caveats the results section reports are re-derivable from the receipt
+    without re-opening the split to recompute them.
+    """
     return {
         "schema": RECEIPT_SCHEMA,
         "read": (read or date.today()).isoformat(),
         "records": records,
         "plan": dict(plan),
+        "facts": dict(facts or {}),
         "rows": dict(rows),
         "earlier": tuple(earlier),
     }

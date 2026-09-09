@@ -312,6 +312,10 @@ def main(argv: list[str] | None = None) -> int:
         plan=planned,
         rows=document["rows"],
         records=len(records),
+        facts={
+            "duplicates": document["duplicates"],
+            "unreadable": document["unreadable"],
+        },
         earlier=earlier,
     )
     TEST_RUN_FILE.write_text(json.dumps(written, indent=2, default=list) + "\n")
