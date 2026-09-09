@@ -327,3 +327,19 @@ def test_the_run_document_carries_both_aggregations_and_every_band(
         scored.official.recall(10)
     )
     assert "without_duplicates" in document
+
+
+def test_a_row_the_official_scorer_did_not_score_keeps_the_tables_shape(
+    final_test, scored
+):
+    """A ragged row renders as a different table, which reads as a different run."""
+    import dataclasses
+
+    rendered = final_test.render_leaderboard(
+        [dataclasses.replace(scored, official=None)], None
+    )
+    lines = rendered.splitlines()
+    row = [line for line in lines if line.startswith("| this run")][0]
+    separator = [line for line in lines if line.startswith("|---")][0]
+
+    assert row.count("|") == separator.count("|")

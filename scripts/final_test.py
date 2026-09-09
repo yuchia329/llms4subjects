@@ -596,7 +596,9 @@ def render_leaderboard(
         )
     for row in scored:
         if row.official is None:
-            lines.append(f"| **this run — {row.row}** | (official scorer not run) ||||")
+            lines.append(
+                f"| this run — {row.row} | " + " | ".join(["—"] * 5) + " |"
+            )
             continue
         mark = "**" if row is headline else ""
         lines.append(
