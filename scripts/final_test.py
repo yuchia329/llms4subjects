@@ -48,6 +48,11 @@ from llms4subjects.artifacts import ArtifactStore  # noqa: E402
 from llms4subjects.config import ExperimentConfig, load_experiment  # noqa: E402
 from llms4subjects.contracts import CODES_PER_RECORD, Cell, Record  # noqa: E402
 from llms4subjects.corpus import frequency_bands, load_split  # noqa: E402
+from llms4subjects.splits import (  # noqa: E402
+    clear_index,
+    merge,
+    require_alignment,
+)
 from llms4subjects.hardware import describe_device, select_device  # noqa: E402
 from llms4subjects.paths import TEST_PLAN_FILE, TEST_RUN_FILE  # noqa: E402
 from llms4subjects.pipeline import predict  # noqa: E402
@@ -64,6 +69,7 @@ from llms4subjects.stages.submission import (  # noqa: E402
     write_submission,
 )
 from llms4subjects.testset import (  # noqa: E402
+    RUN_SCHEMA,
     RunUnplanned,
     SplitAlreadyRead,
     configuration_digest,
@@ -75,8 +81,6 @@ from llms4subjects.testset import (  # noqa: E402
     unreadable_cells,
 )
 from run_experiment import INPUT_ERRORS, load_inputs  # noqa: E402
-
-SCHEMA = "test-run/1"
 
 TEST_SPLIT = "core_test"
 # The rehearsal runs the whole harness against the split every decision was made
@@ -124,6 +128,13 @@ class Official:
     at_k: Mapping[int, Mapping[str, float]]
     cells: int
     records: int
+    # The largest gap, at any k and on any of the three metrics, between their
+    # script's `Overall` row and this project's evaluator run over the very
+    # records their script scored. docs/spec.md story 48 asks for an evaluator
+    # that "reproduces the official scorer's numbers exactly"; a fixture test
+    # holds that on 50 committed records, and this holds it on the real split,
+    # in the run that produces the headline.
+    agreement: float = 0.0
 
     def recall(self, k: int) -> float:
         return self.at_k[k]["recall"]
@@ -186,19 +197,32 @@ class Facts:
         )
 
 
-def split_facts(inputs, config: ExperimentConfig) -> Facts:
+def split_facts(
+    inputs, config: ExperimentConfig, cells: Mapping[str, tuple[str, str]]
+) -> Facts:
     """The duplicate sets and the unscoreable cells, computed once for the run."""
-    cells = {record.id: (record.type, record.lang) for record in inputs.records}
-    if "core_train" in config.index.corpora:
-        train = inputs.index_records
-    else:
-        train = load_split("core_train")
     return Facts(
         records=len(inputs.records),
         duplicates=duplicated_from(inputs.records, inputs.index_records),
-        train_duplicates=duplicated_from(inputs.records, train),
+        train_duplicates=duplicated_from(inputs.records, _assembled("core_train", config, inputs)),
         unreadable=unreadable_cells(cells),
     )
+
+
+def _assembled(corpus: str, config: ExperimentConfig, inputs) -> Sequence[Record]:
+    """One corpus, assembled the way `run_experiment.load_inputs` assembles an index.
+
+    The duplicate counts are printed beside each other and the reader is invited
+    to reconcile them, so both sides have to have been through the same door:
+    the release's double-filed documents merged into one, and any held-out
+    record dropped. `core_train` happens to carry neither today — 32,043 rows
+    under 32,043 ids, nothing held out inside it — so this changes no number
+    now, and that is a property of the corpus rather than a guarantee about it.
+    """
+    if tuple(config.index.corpora) == (corpus,):
+        return inputs.index_records
+    merged = merge(load_split(corpus))
+    return clear_index(merged.records, require_alignment((corpus,)))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -272,21 +296,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         records = inputs.records
+        cells = {record.id: (record.type, record.lang) for record in records}
         if facts is None:
             # Properties of the split and the index corpus rather than of a
             # configuration, so they are computed once and shared by every row.
-            facts = split_facts(inputs, config)
+            facts = split_facts(inputs, config, cells)
             print(facts.summary)
 
-        results.append(
-            score(row, config, inputs, split, args, device, facts)
-        )
+        results.append(score(row, config, inputs, args, device, facts, cells))
 
     print()
     print(report(results, records, facts, planned))
 
     document = {
-        "schema": SCHEMA,
+        "schema": RUN_SCHEMA,
         "split": split,
         "records": len(records),
         "duplicates": {
@@ -309,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
 
     written = receipt(
         read=date.today(),
-        plan=planned,
+        under=planned,
         rows=document["rows"],
         records=len(records),
         facts={
@@ -352,10 +375,10 @@ def score(
     row: str,
     config: ExperimentConfig,
     inputs,
-    split: str,
     args,
     device: str,
     facts: Facts,
+    cells: Mapping[str, tuple[str, str]],
 ) -> Scored | Blocked:
     """Predict one row, write its trees, and score it every way the ticket asks."""
     store = ArtifactStore(args.artifacts, data_revision=inputs.revision)
@@ -380,14 +403,13 @@ def score(
     print(f"predicted {len(candidates)} records in {elapsed:.1f}s")
 
     gold = {record.id: record.subjects for record in inputs.records}
-    cells = {record.id: (record.type, record.lang) for record in inputs.records}
     predictions = {result.record_id: result.codes for result in candidates}
     bands = frequency_bands()
 
     report_all = evaluate(gold, predictions, bands, cells)
-    kept = {id for id in gold if id not in set(facts.duplicates)}
+    duplicates = set(facts.duplicates)
     report_kept = evaluate(
-        {id: codes for id, codes in gold.items() if id in kept},
+        {id: codes for id, codes in gold.items() if id not in duplicates},
         predictions,
         bands,
         cells,
@@ -405,10 +427,9 @@ def score(
         if len(result.codes) < CODES_PER_RECORD
     ]
     cellless = [record.id for record in inputs.records if not all(cells[record.id])]
+    excluded = set(short) | set(cellless)
     writeable = [
-        result
-        for result in candidates
-        if result.record_id not in set(short) | set(cellless)
+        result for result in candidates if result.record_id not in excluded
     ]
     write_submission(
         [result.as_prediction(CODES_PER_RECORD) for result in writeable],
@@ -426,7 +447,11 @@ def score(
     official = None
     try:
         official = score_officially(
-            inputs.records, candidates, facts.unreadable, destination / "official"
+            inputs.records,
+            candidates,
+            facts.unreadable,
+            destination / "official",
+            bands,
         )
     except OfficialScorerUnavailable as error:
         print(f"official scorer not run: {error}")
@@ -448,6 +473,7 @@ def score_officially(
     candidates,
     unreadable: Mapping[Cell, Sequence[str]],
     destination: Path,
+    bands: Mapping[str, str],
 ) -> Official:
     """Run the organizers' script over a gold and a prediction tree.
 
@@ -507,17 +533,43 @@ def score_officially(
         sheet_name="Record Type and Language",
     )
     overall = combined[combined["Record Type"] == "Overall"].iloc[0]
-    return Official(
-        at_k={
-            k: {
-                "precision": float(overall[f"precision_{k}"]),
-                "recall": float(overall[f"recall_{k}"]),
-                "f1": float(overall[f"f1_{k}"]),
-            }
-            for k in OFFICIAL_KS
+    at_k = {
+        k: {
+            "precision": float(overall[f"precision_{k}"]),
+            "recall": float(overall[f"recall_{k}"]),
+            "f1": float(overall[f"f1_{k}"]),
+        }
+        for k in OFFICIAL_KS
+    }
+
+    # The same records, through this project's evaluator. Restricted to what
+    # their script actually scored, because the local report covers cells their
+    # reader cannot index and the two figures would differ for that reason
+    # alone — which is a finding about the metric, not a disagreement about it.
+    local = evaluate(
+        gold={record.id: record.subjects for record in scoreable},
+        predictions={
+            record.id: by_id[record.id].codes[:CODES_PER_RECORD]
+            for record in scoreable
         },
+        bands=bands,
+        cells={record.id: (record.type, record.lang) for record in scoreable},
+    )
+    agreement = max(
+        abs(at_k[k][metric] - local.official_macro.at_k[k][metric])
+        for k in OFFICIAL_KS
+        for metric in ("precision", "recall", "f1")
+    )
+    print(
+        f"official scorer and the local evaluator agree to {agreement:.2e} "
+        f"over {len(scoreable)} records in {len(local.by_cell)} cells"
+    )
+
+    return Official(
+        at_k=at_k,
         cells=len(combined) - 1,
         records=len(scoreable),
+        agreement=agreement,
     )
 
 
@@ -613,7 +665,9 @@ def render_leaderboard(
             f"The four published rows are quoted to two decimals, as published. "
             f"This run's are the organizers' script's own `Overall` row over the "
             f"{headline.official.cells} cells its reader can index into "
-            f"({headline.official.records} records).",
+            f"({headline.official.records} records), which this project's own "
+            f"evaluator reproduces over the same records to "
+            f"{headline.official.agreement:.0e}.",
         ]
     return "\n".join(lines)
 
@@ -788,6 +842,9 @@ def row_document(result: Scored | Blocked) -> dict:
             {
                 "cells": result.official.cells,
                 "records": result.official.records,
+                # How far their script and this project's evaluator were from
+                # each other on the records both scored, in the run itself.
+                "agreement": result.official.agreement,
                 "at_k": {
                     str(k): result.official.at_k[k] for k in OFFICIAL_KS
                 },
@@ -795,6 +852,19 @@ def row_document(result: Scored | Blocked) -> dict:
             if result.official is not None
             else None
         ),
+        # Which cells carry the macro figure. Recorded rather than only
+        # rendered: it is the evidence for the divergence this project reports
+        # as a result, and a reader should not have to re-open the split to
+        # get it back.
+        "cell_shares": [
+            {
+                "cell": f"{cell.record_type}/{cell.language}",
+                "records": cell.records,
+                "record_share": cell.record_share,
+                "recall_share": cell.mean_recall_share,
+            }
+            for cell in result.report.divergence.cells
+        ],
         "without_duplicates": {
             "micro": _at_k(result.without_duplicates.micro),
             "official_macro": _at_k(result.without_duplicates.official_macro),

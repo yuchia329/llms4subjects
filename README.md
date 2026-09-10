@@ -93,8 +93,9 @@ repository that reads `core_test`. The configuration it scores is digested into
 whose configuration moved since is refused rather than scored; the receipt in
 `reference/test_run.json` is written after, so a second read is a refusal that
 names the first. Its headline figure comes from the organizers' own script over
-a submission tree rather than from the local evaluator, which the same run
-checks against it. See [llms4subjects/testset.py](llms4subjects/testset.py).
+a submission tree rather than from the local evaluator, and the run measures how
+far the two are apart over the records their script scored — 1.1e-16 on the one
+run there has been. See [llms4subjects/testset.py](llms4subjects/testset.py).
 
 ## Dataset
 

@@ -140,7 +140,7 @@ def test_the_official_scorer_is_run_over_the_submission_tree(
 ):
     scorer.official()  # skip the module if pandas/openpyxl are absent
     official = final_test.score_officially(
-        records(entries), candidates(entries), {}, tmp_path
+        records(entries), candidates(entries), {}, tmp_path, frequency_bands()
     )
 
     assert (tmp_path / "results" / "final_test.xlsx").exists()
@@ -154,7 +154,7 @@ def test_the_local_evaluator_agrees_with_the_scorer_on_the_same_cells(
     """The headline is quoted from their script; this says ours reproduces it."""
     scorer.official()
     official = final_test.score_officially(
-        records(entries), candidates(entries), {}, tmp_path
+        records(entries), candidates(entries), {}, tmp_path, frequency_bands()
     )
     local = evaluate(
         gold=scorer.gold(entries),
@@ -179,7 +179,7 @@ def test_cells_the_scorer_cannot_read_are_left_out_of_its_trees(
     unreadable = {Cell("Book", "fr"): (entries[0]["id"],)}
 
     official = final_test.score_officially(
-        records(entries), candidates(entries), unreadable, tmp_path
+        records(entries), candidates(entries), unreadable, tmp_path, frequency_bands()
     )
 
     assert official.records == len(entries) - 1
@@ -213,7 +213,7 @@ def scored(final_test, entries, tmp_path_factory):
             cells,
         ),
         official=final_test.score_officially(
-            records(entries), candidates(entries), {}, workspace
+            records(entries), candidates(entries), {}, workspace, frequency_bands()
         ),
         submission=workspace / "pred",
         elapsed=1.0,
@@ -353,3 +353,32 @@ def test_the_unregistered_appendix_row_is_named_rather_than_left_out(final_test)
 
     assert "appendix" in rendered
     assert "verify_model_releases.py" in rendered
+
+
+def test_the_run_measures_its_own_agreement_with_the_official_scorer(
+    final_test, entries, tmp_path
+):
+    """docs/spec.md story 48 wants an evaluator that reproduces their numbers.
+
+    A fixture test says so about 50 committed records. This says the run itself
+    measures it, over the records their script actually scored, and carries the
+    figure into the receipt — so the claim in docs/results.md is produced by the
+    run rather than asserted about it.
+    """
+    scorer.official()
+
+    official = final_test.score_officially(
+        records(entries), candidates(entries), {}, tmp_path, frequency_bands()
+    )
+
+    assert official.agreement == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_agreement_and_the_cell_shares_reach_the_receipt(final_test, scored):
+    document = final_test.row_document(scored)
+
+    assert document["official_scorer"]["agreement"] == scored.official.agreement
+    assert len(document["cell_shares"]) == len(scored.report.divergence.cells)
+    assert sum(cell["recall_share"] for cell in document["cell_shares"]) == (
+        pytest.approx(1.0)
+    )

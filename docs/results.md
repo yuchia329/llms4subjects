@@ -2225,9 +2225,14 @@ configuration has moved since.
 | **this run** | **0.2068** | **0.5056** | **0.1346** | **0.6299** | **0.7550** |
 
 This run's row is the organizers' own script's `Overall`, computed inside the
-run over a submission tree it wrote — not the local evaluator, which is checked
-against it in the same pass and agrees. The four published rows are quoted from
-docs/spec.md at the two decimals they were published at.
+run over a submission tree it wrote, not by the local evaluator. The two agree:
+over the 4,882 records their script scored, this project's evaluator reproduces
+its `Overall` row to **1.1e-16** on every metric at every k — verified against
+the trees under `artifacts/test/headline/official/` that the run itself left
+behind, and measured in-run by `score_officially` from this commit onward, so a
+future run prints the figure rather than having it checked afterwards. The four
+published rows are quoted from docs/spec.md at the two decimals they were
+published at.
 
 **The result is above the top published row on recall and below every one of
 them on precision, and those two facts are the same fact.** Read the ratio: at
@@ -2244,9 +2249,12 @@ recall.
 | 3 | 830 | 2,490 | 0.6048 |
 | 4 | 403 | 1,612 | 0.5273 |
 | 5 or more | 456 | 2,926 | 0.4163 |
+| **total** | **4,904** | **11,787** | |
 
-34.1% of the test split carries exactly one gold heading, and that third is
-where the recall figure lives. The honest summary of the leaderboard row is
+Computed from the submission tree, so it covers the 4,904 records that reached
+it rather than all 4,910: the six with a blank cell half have no file there.
+34.1% of them carry exactly one gold heading, and that third is where the
+recall figure lives. The honest summary of the leaderboard row is
 therefore not "this beats RUC": it is that this system finds *a* correct heading
 more often than the published systems and finds *all* of a record's headings
 less often, and the aggregate the leaderboard is read on rewards the first.
@@ -2259,12 +2267,13 @@ less often, and the aggregate the leaderboard is read on rewards the first.
 | official-macro, all 20 cells | 0.5516 | 0.7156 | 0.8248 | 0.8558 |
 | official scorer, the 9 cells it can read | 0.5056 | 0.6299 | 0.7889 | 0.8467 |
 
-The divergence at k = 10 is **+0.1245**, which is larger than the 0.06 that
-separates the top published system from the fourth. docs/spec.md predicted this
-from the cell sizes and it is confirmed: 9 of the 20 cells carry 52.5% of the
-official recall figure, and seven of those nine hold nine records or fewer.
+The divergence at k = 10 is **+0.1245**, which is larger than the 0.08 that
+separates the best published R@10 from the worst of the four. docs/spec.md
+predicted this from the cell sizes and it is confirmed: 9 of the 20 cells carry
+52.5% of the **local 20-cell macro** figure, and seven of those nine hold nine
+records or fewer.
 
-| cell | records | share of records | share of the figure |
+| cell | records | share of records | share of the 20-cell macro |
 |---|---:|---:|---:|
 | Conference / es | 2 | 0.04% | 6.45% |
 | Thesis / (blank) | 1 | 0.02% | 6.45% |
@@ -2276,19 +2285,33 @@ official recall figure, and seven of those nine hold nine records or fewer.
 | Book / de | 1,465 | 29.84% | 5.26% |
 | Conference / de | 98 | 2.00% | 5.17% |
 
-A cell holding one Japanese book is worth 6.14% of the headline metric, and the
-1,465-record German book cell is worth 5.26%. That is the aggregation working as
-specified rather than a defect, and it is the reason the micro column exists.
+**Those shares are of the local 20-cell macro, and seven of the nine cells above
+contribute nothing to the 0.6299 headline at all** — because eleven of the
+twenty cells are ones the organizers' script cannot read. Its reader seeds its
+result with `de` and `en` and five record types and then subscripts that
+dictionary by directory name, so the 28 records in French, Spanish, Czech,
+Turkish, Dutch, Japanese and blank-language cells raise a `KeyError` inside
+their code. Six of those 28 are the blank-cell-half records, which the
+submission layout also has no directory for. 4,882 of 4,910 records reach the
+official trees; all 4,910 reach the local evaluator.
 
-**And eleven of the twenty cells are ones the organizers' script cannot read.**
-Its reader seeds its result with `de` and `en` and five record types and then
-subscripts that dictionary by directory name, so the 28 records in French,
-Spanish, Czech, Turkish, Dutch, Japanese and blank-language cells raise a
-`KeyError` inside their code. They are in every micro figure above and in none
-of the official ones — including, necessarily, the published leaderboard's. A
-further 6 records carry a blank cell half, which the submission layout has no
-directory for; 4,882 of 4,910 reach the official trees, and all 4,910 reach the
-local evaluator.
+| cell | records | in the local 20-cell macro | in the official figure |
+|---|---:|---|---|
+| Book / de | 1,465 | 5.26% | scored |
+| Conference / de | 98 | 5.17% | scored |
+| Book / fr | 9 | 5.81% | **unreadable** |
+| Book / (blank) | 5 | 5.49% | **unreadable** |
+| Conference / es | 2 | 6.45% | **unreadable** |
+| Book / cs, Book / ja, Report / fr, Thesis / (blank) | 1 each | 5.5–6.5% each | **unreadable** |
+
+So the divergence has two separable causes and the table above separates them.
+One is the aggregation itself: a cell holding one German conference volume gets
+the same vote as one holding 1,465 German books, and that is the metric working
+as specified. The other is that a third of the cells this project can score are
+cells the benchmark's own scorer drops — which means the published leaderboard's
+`Overall` never contained them either, and the like-for-like comparison is the
+9-cell row rather than the 20-cell one. It is the 9-cell row that is quoted
+against the leaderboard above.
 
 ### By frozen frequency band, which is what this project is for
 
@@ -2338,6 +2361,11 @@ run indexed, and **107** against `core_train` alone. No definition tried reaches
 | 142 | whitespace- and case-normalised against `all_train` + `all_dev` |
 | 313 | title alone against `core_train` |
 
+The run's own receipt carries the first and third of those, which are the two
+the report reads; the rest were computed against the committed splits during
+the same opening, and `llms4subjects.testset.duplicated_from` reproduces any of
+them from a corpus and a key function.
+
 The figure came from docs/idea.md, written against the pre-rebuild CSVs, and
 legacy/README.md records why it cannot be recovered: those files kept **no
 record ids**, so "under a different TIBKAT id" was not computable on them, and
@@ -2380,9 +2408,10 @@ subset holds 17.05% of gold assignments and its own R@100 is 0.5325.
   heading and this system reaches 0.7367 R@10 there against 0.4163 on records
   with five or more.
 - **The aggregation is worth more than the method.** +0.1245 separates this
-  system's two aggregations at k = 10; 0.06 separates first from fourth on the
-  published table. Any comparison on this benchmark that quotes one number is
-  quoting the cell sizes as much as the system.
+  system's two aggregations at k = 10; 0.08 separates the best published R@10
+  from the worst of the four. Any comparison on this benchmark that quotes one
+  number is quoting the cell sizes as much as the system — and a third of the
+  cells this project can score are cells the benchmark's own scorer drops.
 - **The zero-shot band is the result.** 0.3547 R@10 on 8.9% of gold assignments
   that a closed-vocabulary classifier scores zero on by construction, and the
   band the fine-tune had been degrading. Retrieval over label text, plus a

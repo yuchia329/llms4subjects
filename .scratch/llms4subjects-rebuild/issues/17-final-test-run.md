@@ -30,8 +30,10 @@ band reaches 0.3547. The two adjudication rows remain owed on an API credential;
       `reference/test_plan.json` digests each row's eight pipeline sections and was committed as `d1109ec`,
       before the run; the harness refuses a row the plan does not name and a row whose digest has moved
 - [x] Test scores are produced by the official scorer on submission-format output, not only by the local
-      evaluator — the run writes both trees and executes `official_eval/llms4subjects-evaluation.py`, and
-      the local evaluator is checked against its `Overall` row in the same pass
+      evaluator — the run writes both trees and executes `official_eval/llms4subjects-evaluation.py`.
+      The local evaluator reproduces its `Overall` row to 1.1e-16 over the 4,882 records it scored;
+      that was verified after the fact against the run's own trees, and `score_officially` now
+      measures it in-run so a later run prints it
 - [x] Results are reported at official-macro and record-micro aggregation, side by side — and the
       divergence, +0.1245 at k=10, is larger than the 0.06 separating first from fourth on the published
       table

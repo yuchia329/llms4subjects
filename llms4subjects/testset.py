@@ -45,6 +45,10 @@ from .paths import TEST_PLAN_FILE, TEST_RUN_FILE
 
 PLAN_SCHEMA = "test-plan/1"
 RECEIPT_SCHEMA = "test-receipt/1"
+# The run document the receipt carries under `rows`, and which
+# `scripts/final_test.py --json` writes on its own. Named here beside the other
+# two so one document does not answer to two schema constants in two modules.
+RUN_SCHEMA = "test-run/1"
 
 # The sections that decide what a row predicts, which the artifact store already
 # names as a prediction's dependencies. Read from there rather than repeated, so
@@ -197,7 +201,7 @@ def require_unread(
 def receipt(
     *,
     read: date | None = None,
-    plan: Mapping,
+    under: Mapping,
     rows: Mapping[str, Mapping],
     records: int = 0,
     facts: Mapping | None = None,
@@ -214,7 +218,7 @@ def receipt(
         "schema": RECEIPT_SCHEMA,
         "read": (read or date.today()).isoformat(),
         "records": records,
-        "plan": dict(plan),
+        "plan": dict(under),
         "facts": dict(facts or {}),
         "rows": dict(rows),
         "earlier": tuple(earlier),

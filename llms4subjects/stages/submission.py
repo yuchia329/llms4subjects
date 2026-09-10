@@ -57,17 +57,7 @@ def write_submission(
         _check_ranking(prediction.record_id, codes)
         cell = _directory_cell(cells, prediction.record_id)
 
-        directory = root / cell.record_type / cell.language
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"{prediction.record_id}.json"
-
-        if prediction.record_id in seen:
-            raise ValueError(
-                f"duplicate record {prediction.record_id!r}: already written to "
-                f"{seen[prediction.record_id]}"
-            )
-        seen[prediction.record_id] = path
-
+        path = _reserve(root, prediction.record_id, cell, ".json", seen)
         path.write_text(
             json.dumps({SUBJECT_FIELD: list(codes)}, indent="\t", ensure_ascii=False)
             + "\n",
@@ -98,25 +88,12 @@ def write_gold_tree(
     root = Path(destination)
     written: list[Path] = []
     seen: dict[str, Path] = {}
+    cells = {record.id: (record.type, record.lang) for record in records}
 
     for record in records:
-        if not record.type or not record.lang:
-            raise ValueError(
-                f"record {record.id!r} has the blank cell "
-                f"{(record.type, record.lang)!r}; a blank segment would "
-                "collapse the layout the scorer reads"
-            )
-        directory = root / record.type / record.lang
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"{record.id}.jsonld"
-
-        if record.id in seen:
-            raise ValueError(
-                f"duplicate record {record.id!r}: already written to "
-                f"{seen[record.id]}"
-            )
-        seen[record.id] = path
-
+        path = _reserve(
+            root, record.id, _directory_cell(cells, record.id), ".jsonld", seen
+        )
         path.write_text(
             json.dumps(
                 {
@@ -137,6 +114,28 @@ def write_gold_tree(
         written.append(path)
 
     return written
+
+
+def _reserve(
+    root: Path, record_id: str, cell: Cell, suffix: str, seen: dict[str, Path]
+) -> Path:
+    """Where one record's file goes, refusing a record already written.
+
+    Both trees need the same three things — the two directory levels, one file
+    per record id, and a refusal rather than an overwrite when a record appears
+    twice — and a duplicate that silently overwrote its earlier file would cost
+    a record from whichever tree it landed in. Shared so the gold side cannot
+    drift from the prediction side.
+    """
+    directory = root / cell.record_type / cell.language
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{record_id}{suffix}"
+    if record_id in seen:
+        raise ValueError(
+            f"duplicate record {record_id!r}: already written to {seen[record_id]}"
+        )
+    seen[record_id] = path
+    return path
 
 
 def _check_ranking(record_id: str, codes: tuple[Code, ...]) -> None:

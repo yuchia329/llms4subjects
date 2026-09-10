@@ -187,7 +187,7 @@ def test_the_first_run_is_allowed_and_needs_no_justification(tmp_path):
 
 def test_a_second_run_is_refused_and_names_the_first(tmp_path):
     path = tmp_path / "test_run.json"
-    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), plan={}, rows={})))
+    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), under={}, rows={})))
 
     with pytest.raises(SplitAlreadyRead, match="2026-09-09"):
         require_unread(path=path)
@@ -195,7 +195,7 @@ def test_a_second_run_is_refused_and_names_the_first(tmp_path):
 
 def test_a_second_run_with_a_justification_is_allowed_and_carries_it(tmp_path):
     path = tmp_path / "test_run.json"
-    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), plan={}, rows={})))
+    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), under={}, rows={})))
 
     assert require_unread(path=path, justification="the scorer was misread") == (
         {"read": "2026-09-09", "justification": "the scorer was misread"},
@@ -205,7 +205,7 @@ def test_a_second_run_with_a_justification_is_allowed_and_carries_it(tmp_path):
 def test_a_receipt_records_what_was_read_and_under_which_plan(tmp_path):
     document = receipt(
         read=date(2026, 9, 9),
-        plan={"fixed": "2026-09-08", "headline": "headline"},
+        under={"fixed": "2026-09-08", "headline": "headline"},
         rows={"headline": {"micro": {"10": 0.5}}},
         records=4910,
     )
@@ -219,10 +219,10 @@ def test_a_receipt_records_what_was_read_and_under_which_plan(tmp_path):
 
 def test_earlier_reads_accumulate_rather_than_being_overwritten(tmp_path):
     path = tmp_path / "test_run.json"
-    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), plan={}, rows={})))
+    path.write_text(json.dumps(receipt(read=date(2026, 9, 9), under={}, rows={})))
     earlier = require_unread(path=path, justification="a fixed scorer bug")
 
-    document = receipt(read=date(2026, 9, 10), plan={}, rows={}, earlier=earlier)
+    document = receipt(read=date(2026, 9, 10), under={}, rows={}, earlier=earlier)
 
     assert document["earlier"] == (
         {"read": "2026-09-09", "justification": "a fixed scorer bug"},
@@ -319,7 +319,7 @@ def test_a_receipt_carries_the_split_facts_the_caveats_are_read_from(tmp_path):
     """So the duplicate rows are re-derivable without re-opening the split."""
     document = receipt(
         read=date(2026, 9, 9),
-        plan={},
+        under={},
         rows={},
         facts={"duplicates": {"indexed": ["a"], "core_train": ["a"]}},
     )
