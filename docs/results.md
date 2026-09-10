@@ -9,8 +9,10 @@ baseline, from `python -m baseline.score` — both of which score through
 `reference/frequency_bands.json`; the command that produced a row is quoted with
 it. **Model selection is micro Recall@10 on dev**, and the official
 macro-over-cells figure is reported beside it because that is what the
-leaderboard is quoted on. All numbers below are **dev**: the gold test split is
-opened once, at the end of the project (ticket 17).
+leaderboard is quoted on. Every number below is **dev** except the last
+section, which is the single test run: the gold split was opened once, on
+2026-09-09, under a configuration digested and committed before it was read
+(`reference/test_plan.json`, and the receipt in `reference/test_run.json`).
 
 ## Dev, by experiment
 
@@ -2191,3 +2193,202 @@ once they started.
   rung 1 so that this rung measures the fine-tune rather than a retune. With the
   tower now nearly twice as strong as the weights assume, 0.6044 is a floor, and
   retuning them is the cheapest experiment left in the project.
+
+
+## The test set, opened once
+
+Ticket 17. Every configuration decision was already made on dev, so this section
+adds no decisions — it runs the chosen one and records what it scores.
+
+    python scripts/final_test.py --fix-plan   # committed as d1109ec
+    python scripts/final_test.py --json artifacts/test/run.json
+
+The configuration is `configs/test.yaml`: rung 3's fine-tuned
+`gte-multilingual-base` over the 70,579-document all-subjects index, its 100
+fused candidates reordered by `bge-reranker-base` in `fuse` mode and cut to the
+submission's 50. The group prior is off and adjudication is a row of its own.
+Nothing in that sentence was chosen after the split was read, and the evidence
+is a digest committed one commit earlier: `reference/test_plan.json` fixes each
+row at `f235176597e2` and `093578bccaeb`, and the run refuses a row whose
+configuration has moved since.
+
+4,910 records, 11,798 gold assignments, 2h35m on the M4 Pro.
+
+### The headline, beside the published table
+
+| system | P@5 | R@5 | P@10 | R@10 | Avg R@k |
+|---|---:|---:|---:|---:|---:|
+| RUC Team | 0.25 | 0.48 | 0.16 | 0.57 | 0.66 |
+| Annif | 0.23 | 0.48 | 0.14 | 0.54 | 0.59 |
+| LA2I2F | 0.20 | 0.41 | 0.13 | 0.49 | 0.58 |
+| DUTIR831 | 0.23 | 0.49 | 0.13 | 0.54 | 0.56 |
+| **this run** | **0.2068** | **0.5056** | **0.1346** | **0.6299** | **0.7550** |
+
+This run's row is the organizers' own script's `Overall`, computed inside the
+run over a submission tree it wrote — not the local evaluator, which is checked
+against it in the same pass and agrees. The four published rows are quoted from
+docs/spec.md at the two decimals they were published at.
+
+**The result is above the top published row on recall and below every one of
+them on precision, and those two facts are the same fact.** Read the ratio: at
+2.40 gold labels per record, a system whose hits were spread evenly across
+records would score P@5/R@5 ≈ 0.478. RUC's ratio is 0.52 and this run's is
+0.409, which says this run's hits are concentrated on records with *few* gold
+labels — and a record with one gold label is one where a single hit is full
+recall.
+
+| gold labels | records | assignments | micro R@10 |
+|---:|---:|---:|---:|
+| 1 | 1,671 | 1,671 | 0.7367 |
+| 2 | 1,544 | 3,088 | 0.6992 |
+| 3 | 830 | 2,490 | 0.6048 |
+| 4 | 403 | 1,612 | 0.5273 |
+| 5 or more | 456 | 2,926 | 0.4163 |
+
+34.1% of the test split carries exactly one gold heading, and that third is
+where the recall figure lives. The honest summary of the leaderboard row is
+therefore not "this beats RUC": it is that this system finds *a* correct heading
+more often than the published systems and finds *all* of a record's headings
+less often, and the aggregate the leaderboard is read on rewards the first.
+
+### The two aggregations, which diverge by more than the gap to the leaderboard
+
+| aggregation | R@5 | R@10 | R@25 | R@50 |
+|---|---:|---:|---:|---:|
+| record-micro, every record | 0.4631 | 0.5910 | 0.7391 | 0.8082 |
+| official-macro, all 20 cells | 0.5516 | 0.7156 | 0.8248 | 0.8558 |
+| official scorer, the 9 cells it can read | 0.5056 | 0.6299 | 0.7889 | 0.8467 |
+
+The divergence at k = 10 is **+0.1245**, which is larger than the 0.06 that
+separates the top published system from the fourth. docs/spec.md predicted this
+from the cell sizes and it is confirmed: 9 of the 20 cells carry 52.5% of the
+official recall figure, and seven of those nine hold nine records or fewer.
+
+| cell | records | share of records | share of the figure |
+|---|---:|---:|---:|
+| Conference / es | 2 | 0.04% | 6.45% |
+| Thesis / (blank) | 1 | 0.02% | 6.45% |
+| Book / cs | 1 | 0.02% | 6.14% |
+| Book / ja | 1 | 0.02% | 6.14% |
+| Book / fr | 9 | 0.18% | 5.81% |
+| Report / fr | 1 | 0.02% | 5.54% |
+| Book / (blank) | 5 | 0.10% | 5.49% |
+| Book / de | 1,465 | 29.84% | 5.26% |
+| Conference / de | 98 | 2.00% | 5.17% |
+
+A cell holding one Japanese book is worth 6.14% of the headline metric, and the
+1,465-record German book cell is worth 5.26%. That is the aggregation working as
+specified rather than a defect, and it is the reason the micro column exists.
+
+**And eleven of the twenty cells are ones the organizers' script cannot read.**
+Its reader seeds its result with `de` and `en` and five record types and then
+subscripts that dictionary by directory name, so the 28 records in French,
+Spanish, Czech, Turkish, Dutch, Japanese and blank-language cells raise a
+`KeyError` inside their code. They are in every micro figure above and in none
+of the official ones — including, necessarily, the published leaderboard's. A
+further 6 records carry a blank cell half, which the submission layout has no
+directory for; 4,882 of 4,910 reach the official trees, and all 4,910 reach the
+local evaluator.
+
+### By frozen frequency band, which is what this project is for
+
+| band | gold assignments | test R@10 | dev R@10, rung 3 | change |
+|---|---:|---:|---:|---:|
+| head | 1,885 (16.0%) | 0.7215 | 0.8084 | −0.0869 |
+| torso | 5,245 (44.5%) | 0.6297 | 0.6793 | −0.0496 |
+| tail | 3,622 (30.7%) | 0.5353 | 0.5059 | **+0.0294** |
+| zero | 1,046 (8.9%) | 0.3547 | 0.2167 | **+0.1380** |
+
+The band supports land within 0.1pp of the shares docs/spec.md froze the bands
+at, which is the strongest single check that the test split behaves as dev
+predicted.
+
+The right-hand columns are the same encoder's dev row from rung 3 **without the
+cross-encoder**, so the comparison is confounded twice — a different split and a
+different pipeline — and is offered as a reading rather than a measurement. But
+the shape is exactly the one ticket 12 measured on a 300-record dev sample: the
+cross-encoder gains on the zero-shot band and loses on the head. Rung 3 closed
+by warning that fine-tuning "buys the head and sells the zero-shot band", and
+that the retrieval design's selling point now rested on the reranker. On test,
+the zero-shot band scores **0.3547**, against 0.2167 for the tower alone on dev
+— the stage bought back more than the fine-tune sold.
+
+That band is 992-odd labels carrying 8.9% of the benchmark that no closed
+classifier can reach at all, and it is the one number in this table that the
+whole architecture was chosen to produce.
+
+### The duplicate caveat, which turns out to be small
+
+| row | micro R@10 | without | change | official-macro R@10 | without | change |
+|---|---:|---:|---:|---:|---:|---:|
+| headline | 0.5910 | 0.5893 | −0.0017 | 0.7156 | 0.7138 | −0.0018 |
+
+**The 163 does not reproduce.** docs/spec.md and docs/idea.md commit to
+reporting the score with and without "the 163 test records whose title and
+abstract exactly duplicate a training record under a different identifier".
+Against the clean splits that set is **134** records (2.7%) for the corpus this
+run indexed, and **107** against `core_train` alone. No definition tried reaches
+163:
+
+| count | definition |
+|---:|---|
+| 107 | exact (title, abstract) against `core_train` |
+| 125 | exact against `core_train` + `core_dev` |
+| 134 | exact against `all_train` — the corpus this run indexed |
+| 142 | whitespace- and case-normalised against `all_train` + `all_dev` |
+| 313 | title alone against `core_train` |
+
+The figure came from docs/idea.md, written against the pre-rebuild CSVs, and
+legacy/README.md records why it cannot be recovered: those files kept **no
+record ids**, so "under a different TIBKAT id" was not computable on them, and
+their `core_test.csv` held seven rows. The caveat was real and the count was not
+measurable when it was written.
+
+What it is worth is now measured, and it is **0.002 of R@10**. A neighbour
+retriever does have the answer handed to it on those 134 records, but they are
+2.7% of the split and the system is not much better on them than on the rest.
+The caveat is reported because the spec committed to reporting it, and the
+finding is that it does not move the headline.
+
+### What did not run
+
+| row | config | why |
+|---|---|---|
+| adjudication, headline model | `configs/test-adjudicate.yaml` | `ANTHROPIC_API_KEY` is not set |
+| adjudication, current model (appendix) | none | needs the credential *and* an `API_MODELS` entry with `appendix=True` |
+
+Both are ticket 13's outstanding debt reaching ticket 17 unchanged, and neither
+is merged into anything above. The stage, its cache, its constraint, its
+rejection log and its config are committed and exercised; what is missing is a
+credential, and for the appendix row a registry entry, which is the only thing
+that lets the model registry hold a model the 2025-01-31 cutoff does not cover.
+Registering one means asserting a release date in a frozen provenance artifact,
+so it is left to whoever has the model rather than guessed here.
+
+The stage's ceiling remains the one dev measured: routing the least-confident
+fifth caps the achievable gain at **+0.046 micro R@10**, because the routed
+subset holds 17.05% of gold assignments and its own R@100 is 0.5325.
+
+### What this decides
+
+- **The test figure is 0.6299 official R@10 and 0.5910 record-micro R@10**, from
+  the organizers' script on a submission tree, under a configuration committed
+  before the split was opened.
+- **The gap to the top four is not a gap in the direction the ticket expected.**
+  Recall is above every published row and precision is below every published
+  row. Both follow from where the hits fall: 34.1% of the split has one gold
+  heading and this system reaches 0.7367 R@10 there against 0.4163 on records
+  with five or more.
+- **The aggregation is worth more than the method.** +0.1245 separates this
+  system's two aggregations at k = 10; 0.06 separates first from fourth on the
+  published table. Any comparison on this benchmark that quotes one number is
+  quoting the cell sizes as much as the system.
+- **The zero-shot band is the result.** 0.3547 R@10 on 8.9% of gold assignments
+  that a closed-vocabulary classifier scores zero on by construction, and the
+  band the fine-tune had been degrading. Retrieval over label text, plus a
+  cross-encoder that reads it, is what reaches them.
+- **The duplicate caveat costs 0.002**, and the 163 that motivated it was a
+  pre-rebuild figure that does not reproduce at any definition.
+- **The split is now read.** `reference/test_run.json` records the date, the
+  plan it ran under and every figure; a second read is refused unless it carries
+  a justification, which is recorded beside the read it supersedes.
