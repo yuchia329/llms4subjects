@@ -1,0 +1,39 @@
+{
+  "bound": {
+    "assignments": 1046,
+    "assignments_reached": 195,
+    "assignments_unreachable": 851,
+    "labels": 992,
+    "landed": {
+      "tail": 180
+    },
+    "reached": 180,
+    "share_of_gold_assignments": 0.07213086963892185,
+    "total_assignments": 11798,
+    "unreachable": 812
+  },
+  "config": "configs/test.yaml",
+  "data_revision": "8204b08003d4",
+  "index": {
+    "corpora": [
+      "all_train"
+    ],
+    "documents": 70579
+  },
+  "reached": {
+    "reached": {
+      "10": 0.49230769230769234,
+      "5": 0.41025641025641024,
+      "50": 0.6820512820512821
+    },
+    "submission": "artifacts/test/headline/submission",
+    "unreachable": {
+      "10": 0.32314923619271446,
+      "5": 0.24324324324324326,
+      "50": 0.500587544065805
+    }
+  },
+  "read": "2026-09-09",
+  "schema": "zero-shot-bound/1",
+  "split": "core_test"
+}

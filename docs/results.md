@@ -4,15 +4,138 @@ One row per experiment, appended as it completes, so the writeup is a byproduct
 of the work rather than a reconstruction from memory (docs/spec.md, story 57).
 
 Every number here comes from `scripts/run_experiment.py` — or, for the rejected
-baseline, from `python -m baseline.score` — both of which score through
+baseline, from `python -m baseline.score`, and for the bound the next section
+leads with, from `scripts/zero_shot_bound.py` — all of which score through
 `llms4subjects.stages.evaluator` with the bands frozen in
 `reference/frequency_bands.json`; the command that produced a row is quoted with
 it. **Model selection is micro Recall@10 on dev**, and the official
 macro-over-cells figure is reported beside it because that is what the
-leaderboard is quoted on. Every number below is **dev** except the last
-section, which is the single test run: the gold split was opened once, on
-2026-09-09, under a configuration digested and committed before it was read
-(`reference/test_plan.json`, and the receipt in `reference/test_run.json`).
+leaderboard is quoted on. Every number here is **dev** except in two sections —
+"The finding" and "The test set, opened once" — which are the single test run:
+the gold split was opened once, on 2026-09-09, under a configuration digested
+and committed before it was read (`reference/test_plan.json`, and the receipt
+in `reference/test_run.json`).
+
+## The finding
+
+**812 of the subject headings this benchmark's gold test split assigns appear
+on no document, anywhere, and they carry 7.2% of its gold assignments.** Every
+published system on the `tib-core-subjects` leaderboard proposes headings by
+document similarity — the winning submission harvests the subjects of a
+record's nearest neighbours, and so does this project's strongest retriever —
+and a heading that no document carries cannot be harvested from a neighbour at
+any k, from any index, however good the encoder is. So those 851 assignments
+are out of reach for the whole family of methods the leaderboard is made of,
+including the one that won it. Nothing about that number is a property of a
+model; it is a property of the data, and it is derived from three committed
+things and no run at all:
+
+    python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
+        --predictions artifacts/test/headline/submission \
+        --json reference/zero_shot_bound.json
+
+| | labels | gold assignments |
+|---|---:|---:|
+| zero-shot against tib-core train (frozen bands) | 992 | 1,046 |
+| of those, carried by some document in the largest available corpus | 180 | 195 |
+| **unreachable at any corpus size** | **812** | **851 (7.2%)** |
+
+The three inputs are `reference/frequency_bands.json`, which says which
+headings no tib-core training record carries and is read rather than
+recomputed; the 70,579-document all-subjects corpus `configs/test.yaml`
+indexes, which is every labelled document the shared task releases; and the
+4,910-record gold split's own subjects. The 180 headings the larger corpus does
+reach all land in the **tail** band — one to nine documents each — so reaching
+them and retrieving them are different things, and rung 3 measured what they
+were worth: +0.02 on the zero-shot band.
+
+Dev says the same thing on different records: 880 of 1,053 zero-shot dev
+headings unreachable, carrying **7.1%** of dev gold assignments. Two splits
+agreeing to a tenth of a point is what makes this a property of the benchmark
+rather than of a sample.
+
+### What this system scores on them
+
+The bound says what document similarity cannot do. The measurement says what
+reading the label's *name* does instead, on the same 851 assignments, from the
+submission tree the single test run wrote:
+
+| labels | gold assignments | R@5 | R@10 | R@50 |
+|---|---:|---:|---:|---:|
+| carried by no indexed document | 851 | 0.243 | **0.323** | 0.501 |
+| carried by at least one | 195 | 0.410 | 0.492 | 0.682 |
+
+**0.323 R@10 on assignments a neighbour harvest scores 0.000 on by
+construction, and a closed-vocabulary classifier cannot represent at all.** The
+two rows together are the frozen zero-shot band the test section reports at
+0.3547, which is the arithmetic check: 275 hits of 851 plus 96 of 195 is 371 of
+1,046. Reaching them takes a retriever that scores a document against the text
+of all 79,427 vocabulary entries (ticket 05), bilingual label names so an
+English document can match a German heading (ticket 08), and a cross-encoder
+that re-reads the pair (ticket 12) — which on test bought back more than
+fine-tuning the retriever had sold.
+
+The reference point for all of it is the approach this project rejected and
+kept runnable: `bert-base-multilingual-cased` with a dense layer over the
+14,607 training labels scores **0.0667** dev micro R@10 against the pipeline's
+0.6044, and **0.0000** on the zero-shot band at every k — structurally, since
+its output layer has no column for a label `core_train` never used. That row is
+in "baseline — the classifier this project rejects" below, measured through the
+same evaluator and the same frozen bands as every other row here.
+
+### And the leaderboard row, which is the less interesting half
+
+| system | P@5 | R@5 | P@10 | R@10 | Avg R@k |
+|---|---:|---:|---:|---:|---:|
+| RUC Team | 0.25 | 0.48 | 0.16 | 0.57 | 0.66 |
+| Annif | 0.23 | 0.48 | 0.14 | 0.54 | 0.59 |
+| DUTIR831 | 0.23 | 0.49 | 0.13 | 0.54 | 0.56 |
+| LA2I2F | 0.20 | 0.41 | 0.13 | 0.49 | 0.58 |
+| **this run** | **0.2068** | **0.5056** | **0.1346** | **0.6299** | **0.7550** |
+
+Above every published row on recall, below every one on precision, at the
+organizers' own aggregation and from the organizers' own script over a
+submission tree. Both facts are the same fact: 34.1% of the test split carries
+exactly one gold heading, and this system reaches 0.7367 R@10 on those records
+against 0.4163 on records with five or more. It finds *a* correct heading more
+often than the published systems and *all* of a record's headings less often,
+and the aggregate the leaderboard is read on rewards the first.
+
+Read the gap against the aggregation before reading it against the method. One
+set of predictions scores 0.5910 record-micro, 0.7156 at the organizers'
+one-vote-per-cell aggregation over all 20 cells, and 0.6299 over the 9 cells
+their scorer can actually read. **The aggregation alone moves the figure by
++0.1245 at k=10**, where 0.08 separates the best published R@10 from the worst
+of the four — and eleven of the twenty cells this project can score are cells
+the organizers' scorer cannot read at all.
+
+### The two disciplines every number here rests on
+
+- **The model cutoff.** Every model any stage loads is released on or before
+  **2025-01-31**, the close of the SemEval-2025 evaluation window, so the
+  comparison against teams who competed in January 2025 is not flattered by a
+  year of model progress. A name does not carry that claim — both E5
+  checkpoints this project started from had commits landed on them in April
+  2026 — so `reference/model_releases.json` records each model's creation date
+  and pins the newest revision inside the cutoff, `verify_model_releases.py`
+  re-derives it, and `models.check_cutoff` refuses an unvouched model before
+  any weights are fetched.
+- **The test split, opened once.** Every configuration decision in this
+  document was made on the 5,354 dev records. The gold split was read on
+  **2026-09-09**, under a configuration digested into `reference/test_plan.json`
+  and committed one commit earlier (`d1109ec`); the run refuses a row the plan
+  does not name or whose digest has moved, and `reference/test_run.json` is the
+  receipt that makes a second read a refusal rather than a decision. The bound
+  above is derived from that same opening and refuses to run before it —
+  `llms4subjects.testset.require_read`, because a derivation that opened the
+  split itself would be the read.
+
+This section as a single linkable page:
+<https://claude.ai/code/artifact/d65b0f93-c161-4c34-8008-1129a4c10199>, whose
+source is committed at [docs/812-headings.html](812-headings.html) so the two
+cannot drift without a diff. Everything below is the working: one section per
+experiment, in the order the rungs ran, each with its command, its band
+breakdown and what it decided.
 
 ## Dev, by experiment
 
@@ -2307,8 +2430,8 @@ official trees; all 4,910 reach the local evaluator.
 So the divergence has two separable causes and the table above separates them.
 One is the aggregation itself: a cell holding one German conference volume gets
 the same vote as one holding 1,465 German books, and that is the metric working
-as specified. The other is that a third of the cells this project can score are
-cells the benchmark's own scorer drops — which means the published leaderboard's
+as specified. The other is that eleven of the twenty cells this project can
+score are cells the benchmark's own scorer drops — which means the published leaderboard's
 `Overall` never contained them either, and the like-for-like comparison is the
 9-cell row rather than the 20-cell one. It is the 9-cell row that is quoted
 against the leaderboard above.
@@ -2336,9 +2459,22 @@ that the retrieval design's selling point now rested on the reranker. On test,
 the zero-shot band scores **0.3547**, against 0.2167 for the tower alone on dev
 — the stage bought back more than the fine-tune sold.
 
-That band is 992-odd labels carrying 8.9% of the benchmark that no closed
+That band is **992 labels** carrying 8.9% of the benchmark that no closed
 classifier can reach at all, and it is the one number in this table that the
-whole architecture was chosen to produce.
+whole architecture was chosen to produce. It splits in two, and the split is
+this document's headline: 180 of those labels are carried by some document in
+the largest corpus the shared task releases, and **812 are carried by none**,
+so the 851 assignments they hold are unreachable by document similarity at any
+corpus size. This run scores 0.323 R@10 on that half and 0.492 on the other;
+see "The finding" at the top, and
+
+    python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
+        --predictions artifacts/test/headline/submission \
+        --json reference/zero_shot_bound.json
+
+which derives both from the frozen bands, the indexed corpus and this run's own
+submission tree, and refuses to run at all until `reference/test_run.json` says
+the split has been read.
 
 ### The duplicate caveat, which turns out to be small
 
@@ -2407,15 +2543,19 @@ subset holds 17.05% of gold assignments and its own R@100 is 0.5325.
   row. Both follow from where the hits fall: 34.1% of the split has one gold
   heading and this system reaches 0.7367 R@10 there against 0.4163 on records
   with five or more.
-- **The aggregation is worth more than the method.** +0.1245 separates this
-  system's two aggregations at k = 10; 0.08 separates the best published R@10
-  from the worst of the four. Any comparison on this benchmark that quotes one
-  number is quoting the cell sizes as much as the system — and a third of the
-  cells this project can score are cells the benchmark's own scorer drops.
+- **The aggregation is worth more than the method.** +0.1245 separates
+  record-micro from the 20-cell official macro on one set of predictions at
+  k = 10; 0.08 separates the best published R@10 from the worst of the four.
+  Any comparison on this benchmark that quotes one number is quoting the cell
+  sizes as much as the system — and eleven of the twenty cells this project can
+  score are cells the benchmark's own scorer drops.
 - **The zero-shot band is the result.** 0.3547 R@10 on 8.9% of gold assignments
   that a closed-vocabulary classifier scores zero on by construction, and the
   band the fine-tune had been degrading. Retrieval over label text, plus a
-  cross-encoder that reads it, is what reaches them.
+  cross-encoder that reads it, is what reaches them. **812 of those labels are
+  carried by no document in any available corpus**, and the run reaches 0.323
+  R@10 on the 851 assignments they hold — the number every leaderboard system
+  built on document similarity scores 0.000 on.
 - **The duplicate caveat costs 0.002**, and the 163 that motivated it was a
   pre-rebuild figure that does not reproduce at any definition.
 - **The split is now read.** `reference/test_run.json` records the date, the

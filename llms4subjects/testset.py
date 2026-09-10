@@ -80,6 +80,10 @@ class SplitAlreadyRead(RuntimeError):
     """The gold test split has been read, and this run has no justification."""
 
 
+class SplitUnread(RuntimeError):
+    """The gold test split has not been read, and this is not the run that reads it."""
+
+
 def configuration_digest(config: ExperimentConfig) -> str:
     """A digest of everything about `config` that decides what it predicts."""
     payload = json.dumps(
@@ -196,6 +200,28 @@ def require_unread(
     return tuple(written.get("earlier", ())) + (
         {"read": read, "justification": justification},
     )
+
+
+def require_read(path: str | Path | None = None) -> dict:
+    """The receipt, or a refusal: a derivation is not allowed to be the read.
+
+    The mirror image of `require_unread`, and it exists for the opposite
+    failure. Ticket 18 reports one figure the run itself does not compute — how
+    much of the split's gold no corpus of documents can reach — and computing it
+    means reading the split's gold labels. Done before ticket 17 that would be
+    the first read, arriving through a script nothing digested a plan for; done
+    after, it is arithmetic over a split that is already open, and the receipt
+    is what tells the two apart.
+    """
+    source = Path(path) if path is not None else TEST_RUN_FILE
+    if not source.exists():
+        raise SplitUnread(
+            f"the gold test split core_test has not been read — {source} "
+            "records no read — so deriving anything from its gold is the read, "
+            "and this is not the run that makes it:\n"
+            "  python scripts/final_test.py"
+        )
+    return json.loads(source.read_text())
 
 
 def receipt(

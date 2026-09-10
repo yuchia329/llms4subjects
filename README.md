@@ -14,10 +14,50 @@ training, which no published system on this benchmark does.
 - [docs/spec.md](docs/spec.md) — what is being built and why, with the measured
   figures behind each decision
 - [docs/idea.md](docs/idea.md) — the earlier design, kept as the reasoning record
-- [docs/results.md](docs/results.md) — every experiment's dev numbers, appended as it lands
+- [docs/results.md](docs/results.md) — every experiment's numbers, appended as it lands
 - [docs/artifacts.md](docs/artifacts.md) — artifact cache, configs, and the two hosts
 - [legacy/README.md](legacy/README.md) — the contaminated dataset the earlier
   numbers were measured on
+
+## The result, in short
+
+**812 of the gold test split's subject headings appear on no document,
+anywhere, and they carry 7.2% of its gold assignments.** Every published system
+on this leaderboard proposes headings by document similarity — the winning one
+harvests the subjects of a record's nearest neighbours — and a heading no
+document carries cannot be harvested from a neighbour at any k, from any index.
+Those 851 assignments are out of reach for the whole family of methods the
+leaderboard is made of, including the one that won it. This system, which
+scores a document against the *text* of all 79,427 vocabulary entries, reaches
+**0.323 R@10** on them.
+
+```
+python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
+    --predictions artifacts/test/headline/submission \
+    --json reference/zero_shot_bound.json
+```
+
+The bound is arithmetic over three committed things and no model: the frozen
+bands, the 70,579-document corpus the run indexed, and the split's own gold.
+Dev agrees on different records — 880 of 1,053 headings, 7.1% of assignments.
+
+The leaderboard row, which is the less interesting half: **0.6299 official R@10
+and 0.5910 record-micro R@10** on the 4,910-record gold test split, read once
+on 2026-09-09 under a configuration committed one commit before. Above every
+published row on recall (RUC 0.57, Annif 0.54, DUTIR831 0.54, LA2I2F 0.49) and
+below every one on precision, because 34.1% of the split carries one gold
+heading and this system reaches 0.7367 R@10 there against 0.4163 on records
+with five or more. Aggregation moves that figure further than method does: the
+same predictions score 0.5910 record-micro and 0.7156 one-vote-per-cell over
+all 20 cells, 0.1245 apart at k=10, where 0.08 separates first from fourth on
+the published table.
+
+Every model is pinned to a revision released on or before **2025-01-31**, the
+close of the SemEval-2025 evaluation window, so the comparison is not flattered
+by a year of model progress. Full writeup with every rung's tables and band
+breakdowns: [docs/results.md](docs/results.md). The same finding as a single
+page — <https://claude.ai/code/artifact/d65b0f93-c161-4c34-8008-1129a4c10199>,
+source in [docs/812-headings.html](docs/812-headings.html).
 
 ## Repository layout
 
@@ -76,6 +116,7 @@ python scripts/coverage_curve.py configs/rung1.yaml    # coverage against precis
 python scripts/translate_labels.py --report           # translation cache coverage
 python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
 python scripts/verify_split_alignment.py              # which corpora are clear to index
+python scripts/zero_shot_bound.py configs/test.yaml --split core_dev   # what no corpus reaches
 python scripts/final_test.py --rehearse               # the final-run harness, on dev
 pytest                                                # contract and invariant tests
 ```
@@ -476,7 +517,8 @@ the adjudicator is exactly the band they were measured to be good at.
 dev-gold labels no tib-core training record carries, 38,545 extra documents reach
 173 — all of them into the tail band — and leave 880. A label on no document
 cannot be proposed by document similarity, at any corpus size, which bounds every
-leaderboard system built on it. See [docs/results.md](docs/results.md).
+leaderboard system built on it. On test the same derivation gives 812 labels and
+7.2%; see "The result, in short" above and [docs/results.md](docs/results.md).
 
 ## Evaluation
 
@@ -510,9 +552,12 @@ Metrics slice by document language, record type, and label frequency band:
 | tail | 1 to 9 | 12,999 | 2,748 | 30.7% |
 | zero | never seen | rest of the vocabulary | 992 | 8.9% |
 
-The first two columns are the frozen artifact; the last two are the test-side
-figures from [docs/spec.md](docs/spec.md), which is where they stay until ticket
-17 opens the test split.
+The first two columns are the frozen artifact; the last two are measured on the
+gold test split, which was opened once on 2026-09-09. The supports landed
+within 0.1pp of the shares [docs/spec.md](docs/spec.md) froze the bands at,
+which is the strongest single check that the split behaves as dev predicted.
+Recall by band on that run: head 0.7215, torso 0.6297, tail 0.5353, **zero
+0.3547**.
 
 The band assignment is **frozen** in `reference/frequency_bands.json` and read,
 never derived, so adding documents to the index cannot reclassify which labels

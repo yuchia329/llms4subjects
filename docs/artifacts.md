@@ -103,6 +103,7 @@ as a side effect of a run. It holds:
 | `split_alignment.json` | which corpora are clear to index, and which held-out records they carry | `scripts/verify_split_alignment.py` |
 | `test_plan.json` | the configurations the single test run will score, digested before the split is read | `scripts/final_test.py --fix-plan` |
 | `test_run.json` | the receipt: what the test run scored, and the date the gold split was opened | `scripts/final_test.py` |
+| `zero_shot_bound.json` | the headline: how much of the gold split's assignments no corpus of documents can reach, and what the run scored on them | `scripts/zero_shot_bound.py --json` |
 
 `rung3-report.json` is deliberately not written under the screens' schema. A
 screen is one row per encoder and `scripts/compare_rungs.py` compares two of

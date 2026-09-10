@@ -1,0 +1,754 @@
+<title>The 812 Headings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    /* Catalogue ink on card stock: cool neutrals, one stamp-blue accent, and
+       the unreachable share drawn as absence rather than as a second colour. */
+    --paper: #f4f6f8;
+    --card: #ffffff;
+    --ink: #131a21;
+    --ink-soft: #4c5966;
+    --ink-faint: #7d8996;
+    --rule: #d5dbe2;
+    --rule-firm: #b6c0cb;
+    --stamp: #1d5b86;
+    --stamp-soft: #e3edf4;
+    --void: #9aa5b1;
+    --shadow: 0 1px 2px rgba(19, 26, 33, .06), 0 8px 24px -18px rgba(19, 26, 33, .5);
+
+    --measure: 66ch;
+    --wide: 62rem;
+
+    color-scheme: light dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0d1319;
+      --card: #131b23;
+      --ink: #e4ebf1;
+      --ink-soft: #a4b1bd;
+      --ink-faint: #74828f;
+      --rule: #26313c;
+      --rule-firm: #3a4855;
+      --stamp: #71afd8;
+      --stamp-soft: #17313f;
+      --void: #55636f;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -20px rgba(0, 0, 0, .9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0d1319;
+    --card: #131b23;
+    --ink: #e4ebf1;
+    --ink-soft: #a4b1bd;
+    --ink-faint: #74828f;
+    --rule: #26313c;
+    --rule-firm: #3a4855;
+    --stamp: #71afd8;
+    --stamp-soft: #17313f;
+    --void: #55636f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -20px rgba(0, 0, 0, .9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4rem;
+  }
+
+  .prose { max-width: var(--measure); }
+
+  p { margin: 0 0 1rem; }
+  p:last-child { margin-bottom: 0; }
+
+  a {
+    color: var(--stamp);
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+
+  h1, h2, h3 {
+    font-family: Spectral, "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.15;
+  }
+
+  h1 { font-size: clamp(2.1rem, 1.4rem + 2.6vw, 3.4rem); letter-spacing: -0.015em; }
+  h2 { font-size: clamp(1.4rem, 1.15rem + 1vw, 1.85rem); }
+  h3 { font-size: 1.08rem; font-weight: 600; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 .9rem;
+  }
+
+  /* --- masthead ---------------------------------------------------------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    border-bottom: 1px solid var(--rule-firm);
+    padding-bottom: 2.5rem;
+  }
+
+  .masthead .lede {
+    font-family: Spectral, Georgia, serif;
+    font-size: 1.22rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
+
+  .masthead .lede strong { color: var(--ink); font-weight: 600; }
+
+  .provenance {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.75rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .78rem;
+    color: var(--ink-faint);
+  }
+
+  .provenance span::before {
+    content: "";
+    display: inline-block;
+    width: .4rem;
+    height: .4rem;
+    margin-right: .55rem;
+    vertical-align: .08rem;
+    background: var(--stamp);
+  }
+
+  /* --- the vocabulary strip ---------------------------------------------- */
+
+  .strip {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .strip-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9px, 1fr));
+    gap: 2px;
+    padding: 1.25rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+  }
+
+  .cell { aspect-ratio: 1; }
+  .cell.reached { background: var(--stamp); }
+  /* Drawn as an empty box on purpose: nothing carries these headings. */
+  .cell.unreachable {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--void);
+  }
+
+  .key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 2rem;
+    font-size: .86rem;
+    color: var(--ink-soft);
+  }
+
+  .key > div { display: flex; align-items: center; gap: .6rem; }
+
+  .swatch { width: 14px; height: 14px; flex: none; }
+  .swatch.reached { background: var(--stamp); }
+  .swatch.unreachable {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--void);
+  }
+
+  /* --- figures ------------------------------------------------------------ */
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+
+  .figure {
+    background: var(--card);
+    padding: 1.25rem 1.35rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+  }
+
+  .figure .value {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1.9rem;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .figure .label {
+    font-size: .82rem;
+    color: var(--ink-soft);
+    line-height: 1.45;
+  }
+
+  /* --- sections ----------------------------------------------------------- */
+
+  section { display: flex; flex-direction: column; gap: 1.5rem; }
+
+  .section-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .6rem;
+    border-top: 1px solid var(--rule-firm);
+    padding-top: 1.4rem;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: .9rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scroller { overflow-x: auto; }
+
+  th, td {
+    text-align: left;
+    padding: .58rem .8rem;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .7rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    border-bottom: 1px solid var(--rule-firm);
+  }
+
+  td.num, th.num { text-align: right; }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.mine td { background: var(--stamp-soft); font-weight: 600; }
+  td.first { white-space: normal; min-width: 15rem; }
+
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    padding-top: .8rem;
+    font-size: .82rem;
+    color: var(--ink-faint);
+    white-space: normal;
+  }
+
+  /* --- band bars ---------------------------------------------------------- */
+
+  .bars { display: flex; flex-direction: column; gap: .85rem; }
+
+  .bar-row {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr) 3.6rem;
+    align-items: center;
+    gap: .9rem;
+  }
+
+  .bar-name {
+    display: block;
+    font-size: .88rem;
+    line-height: 1.25;
+  }
+
+  .bar-name small {
+    display: block;
+    color: var(--ink-faint);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .7rem;
+  }
+
+  .track {
+    display: block;
+    position: relative;
+    height: 1.5rem;
+    background: linear-gradient(
+      to right, var(--rule) 0 1px, transparent 1px
+    ) repeat-x;
+    background-size: 25% 100%;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .fill {
+    display: block;
+    height: 100%;
+    background: var(--stamp);
+  }
+
+  .fill.hatched {
+    background: repeating-linear-gradient(
+      45deg, var(--void) 0 2px, transparent 2px 5px
+    );
+    box-shadow: inset 0 0 0 1px var(--void);
+  }
+
+  .bar-value {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .86rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .axis {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr) 3.6rem;
+    gap: .9rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .7rem;
+    color: var(--ink-faint);
+  }
+
+  .ticks { display: flex; justify-content: space-between; }
+
+  /* --- code + callouts ---------------------------------------------------- */
+
+  pre {
+    margin: 0;
+    padding: 1rem 1.15rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-left: 2px solid var(--stamp);
+    overflow-x: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .8rem;
+    line-height: 1.65;
+    color: var(--ink-soft);
+  }
+
+  code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .88em;
+    color: var(--ink);
+  }
+
+  .note {
+    border-left: 2px solid var(--rule-firm);
+    padding-left: 1.1rem;
+    color: var(--ink-soft);
+    font-size: .95rem;
+    max-width: var(--measure);
+  }
+
+  .two-up {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: 1.5rem;
+  }
+
+  .discipline {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    padding: 1.2rem 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+  }
+
+  .discipline p { font-size: .9rem; color: var(--ink-soft); }
+
+  .stages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--rule);
+    background: var(--card);
+  }
+
+  .stages li {
+    display: grid;
+    grid-template-columns: 10.5rem minmax(0, 1fr);
+    gap: 1rem;
+    padding: .8rem 1.2rem;
+    border-bottom: 1px solid var(--rule);
+    font-size: .9rem;
+    color: var(--ink-soft);
+  }
+
+  .stages li:last-child { border-bottom: none; }
+
+  .stages b {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule-firm);
+    padding-top: 1.5rem;
+    font-size: .85rem;
+    color: var(--ink-faint);
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+
+  :focus-visible { outline: 2px solid var(--stamp); outline-offset: 2px; }
+
+  @media (max-width: 34rem) {
+    .bar-row, .axis { grid-template-columns: 6.5rem minmax(0, 1fr) 3.2rem; }
+    .stages li { grid-template-columns: minmax(0, 1fr); gap: .2rem; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">SemEval-2025 Task 5 &middot; tib-core-subjects</p>
+      <h1>812 headings no document carries</h1>
+    </div>
+    <p class="lede">
+      Every published system on this benchmark proposes subject headings by
+      document similarity: it finds a record's nearest neighbours in a labelled
+      corpus and harvests their headings. <strong>812 of the gold test split's
+      headings appear on no document in any corpus the shared task
+      releases</strong>, so they cannot be harvested from a neighbour at any
+      <em>k</em>, from any index, however good the encoder. They carry 7.2% of
+      the split's gold assignments &mdash; unreachable by the entire family of
+      methods the leaderboard is made of, including the one that won it.
+    </p>
+    <div class="provenance">
+      <span>4,910 gold records</span>
+      <span>11,798 assignments</span>
+      <span>79,427-entry GND vocabulary</span>
+      <span>split read once, 2026-09-09</span>
+    </div>
+  </header>
+
+  <section class="strip" aria-labelledby="strip-title">
+    <div class="section-head prose">
+      <h2 id="strip-title">The zero-shot band, one square per heading</h2>
+      <p>
+        992 headings in the gold test split occur in no <code>tib-core</code>
+        training record. Growing the index from 32,043 documents to all 70,579
+        the shared task releases &mdash; a second track, 38,545 extra labelled
+        records &mdash; reaches 180 of them. Every one of those 180 lands in the
+        <em>tail</em>: one to nine documents each, enough to be proposed in
+        principle and rarely enough to be ranked.
+      </p>
+    </div>
+
+    <div class="strip-grid" id="strip" role="img"
+         aria-label="992 squares, one per zero-shot heading: 180 solid squares are carried by at least one document in the 70,579-document corpus, and 812 hatched squares are carried by none."></div>
+
+    <div class="key">
+      <div><span class="swatch reached"></span> 180 reached by the larger corpus &mdash; 195 gold assignments</div>
+      <div><span class="swatch unreachable"></span> 812 carried by no document &mdash; 851 gold assignments, 7.2% of the split</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="reach-title">
+    <div class="section-head prose">
+      <h2 id="reach-title">What reading the heading's name reaches instead</h2>
+      <p>
+        The bound says what document similarity cannot do. It says nothing about
+        a system that scores a record against the <em>text</em> of all 79,427
+        vocabulary entries &mdash; a heading is then reachable by having a name
+        rather than by having a training example. On exactly those 851
+        assignments, this pipeline scores <strong>0.323 R@10</strong>.
+      </p>
+    </div>
+
+    <div class="figures">
+      <div class="figure">
+        <span class="value">0.323</span>
+        <span class="label">R@10 on the 851 assignments no corpus reaches. A neighbour harvest scores 0.000 here by construction.</span>
+      </div>
+      <div class="figure">
+        <span class="value">0.501</span>
+        <span class="label">R@50 on the same assignments &mdash; half of them are in the 50 codes a submission carries.</span>
+      </div>
+      <div class="figure">
+        <span class="value">0.000</span>
+        <span class="label">What the classifier this project rejected scores there, at every <em>k</em>: its output layer has no column for an unseen label.</span>
+      </div>
+    </div>
+
+    <div class="bars" aria-hidden="false">
+      <div class="axis"><span></span><span class="ticks"><i>0</i><i>.25</i><i>.50</i><i>.75</i><i>1.0</i></span><span></span></div>
+      <div class="bar-row">
+        <span class="bar-name">head<small>1,885 assignments</small></span>
+        <span class="track"><span class="fill" style="width: 72.15%"></span></span>
+        <span class="bar-value">0.722</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">torso<small>5,245 assignments</small></span>
+        <span class="track"><span class="fill" style="width: 62.97%"></span></span>
+        <span class="bar-value">0.630</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">tail<small>3,622 assignments</small></span>
+        <span class="track"><span class="fill" style="width: 53.53%"></span></span>
+        <span class="bar-value">0.535</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">zero, reached<small>195 assignments</small></span>
+        <span class="track"><span class="fill" style="width: 49.23%"></span></span>
+        <span class="bar-value">0.492</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-name">zero, unreachable<small>851 assignments</small></span>
+        <span class="track"><span class="fill hatched" style="width: 32.31%"></span></span>
+        <span class="bar-value">0.323</span>
+      </div>
+    </div>
+
+    <p class="note">
+      Recall at <em>k</em>=10 by frequency band, on the gold test split. Bands are
+      frozen against <code>tib-core</code> training counts and read from a
+      committed file, never recomputed, so growing an index cannot quietly
+      reclassify which headings count as tail. The bottom two rows are the same
+      zero-shot band the run reports at 0.3547, split by whether any document in
+      the corpus carries the heading.
+    </p>
+  </section>
+
+  <section aria-labelledby="derivation-title">
+    <div class="section-head prose">
+      <h2 id="derivation-title">The derivation, which uses no model</h2>
+      <p>
+        The bound is arithmetic over three committed things: the frozen band
+        file, the corpus the run indexed, and the split's own gold. One command
+        reproduces every number above, and it refuses to run until the receipt
+        says the gold split has already been opened &mdash; a derivation that
+        opened the split itself would be the read.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th class="first">gold test headings</th>
+            <th class="num">headings</th>
+            <th class="num">assignments</th>
+            <th class="num">share of split</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="first">zero-shot against <code>tib-core</code> train (frozen)</td>
+            <td class="num">992</td>
+            <td class="num">1,046</td>
+            <td class="num">8.9%</td>
+          </tr>
+          <tr>
+            <td class="first">of those, carried by some document in the 70,579-document corpus</td>
+            <td class="num">180</td>
+            <td class="num">195</td>
+            <td class="num">1.7%</td>
+          </tr>
+          <tr class="mine">
+            <td class="first">carried by no document, at any corpus size</td>
+            <td class="num">812</td>
+            <td class="num">851</td>
+            <td class="num">7.2%</td>
+          </tr>
+        </tbody>
+        <caption>
+          The dev split agrees on different records: 880 of 1,053 zero-shot
+          headings unreachable, 7.1% of its gold assignments. Two splits within a
+          tenth of a point is what makes this a property of the benchmark rather
+          than of a sample.
+        </caption>
+      </table>
+    </div>
+
+<pre>python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
+    --predictions artifacts/test/headline/submission \
+    --json reference/zero_shot_bound.json</pre>
+  </section>
+
+  <section aria-labelledby="board-title">
+    <div class="section-head prose">
+      <h2 id="board-title">The leaderboard row, which is the less interesting half</h2>
+      <p>
+        Scored by the organizers' own script over a submission tree, at their own
+        aggregation: one vote per <code>record type &times; language</code> cell.
+        Recall lands above every published row and precision below every one,
+        and those are the same fact rather than two.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th class="first">system</th>
+            <th class="num">P@5</th>
+            <th class="num">R@5</th>
+            <th class="num">P@10</th>
+            <th class="num">R@10</th>
+            <th class="num">Avg R@k</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="first">RUC Team</td><td class="num">0.25</td><td class="num">0.48</td><td class="num">0.16</td><td class="num">0.57</td><td class="num">0.66</td></tr>
+          <tr><td class="first">Annif</td><td class="num">0.23</td><td class="num">0.48</td><td class="num">0.14</td><td class="num">0.54</td><td class="num">0.59</td></tr>
+          <tr><td class="first">DUTIR831</td><td class="num">0.23</td><td class="num">0.49</td><td class="num">0.13</td><td class="num">0.54</td><td class="num">0.56</td></tr>
+          <tr><td class="first">LA2I2F</td><td class="num">0.20</td><td class="num">0.41</td><td class="num">0.13</td><td class="num">0.49</td><td class="num">0.58</td></tr>
+          <tr class="mine"><td class="first">this run</td><td class="num">0.2068</td><td class="num">0.5056</td><td class="num">0.1346</td><td class="num">0.6299</td><td class="num">0.7550</td></tr>
+        </tbody>
+        <caption>
+          Published rows quoted at the two decimals they were published at. This
+          run's row is the organizers' script's <code>Overall</code>, computed
+          inside the run over the tree it wrote; the project's own evaluator
+          reproduces it to 1.1e-16 over the 4,882 records their reader can index.
+        </caption>
+      </table>
+    </div>
+
+    <div class="two-up">
+      <div class="prose">
+        <h3>Where the hits fall</h3>
+        <p>
+          34.1% of the split carries exactly one gold heading, and this system
+          reaches 0.7367 R@10 on those records against 0.4163 on records with
+          five or more. It finds <em>a</em> correct heading more often than the
+          published systems and <em>all</em> of a record's headings less often.
+          The aggregate the leaderboard is read on rewards the first.
+        </p>
+      </div>
+      <div class="prose">
+        <h3>Aggregation before method</h3>
+        <p>
+          One set of predictions scores 0.5910 record-micro, 0.7156
+          one-vote-per-cell across all 20 cells, and 0.6299 across the 9 cells
+          the organizers' scorer can read. Aggregation alone moves it 0.1245 at
+          <em>k</em>=10, where 0.08 separates the best published R@10 from the
+          worst of the four. A cell holding one German conference volume gets
+          the same vote as one holding 1,465 German books, and eleven of twenty
+          cells raise a <code>KeyError</code> inside the organizers' reader.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="how-title">
+    <div class="section-head prose">
+      <h2 id="how-title">How it is built, briefly</h2>
+      <p>
+        The pipeline reimplements a mechanism the winning system already used.
+        What is new is knowing where the score comes from: every stage is
+        measured alone, and every metric is broken down by how often the heading
+        appeared in training.
+      </p>
+    </div>
+
+    <ul class="stages">
+      <li><b>knn</b><span>Subjects of the 20 nearest indexed documents, summed by similarity. Reaches headings some record carries &mdash; 0.69 R@10 on head, 0.000 on zero-shot.</span></li>
+      <li><b>dense</b><span>The record scored against all 79,427 vocabulary entries rendered as bilingual text. Reaches any heading with a name; the band ordering is inverted against kNN.</span></li>
+      <li><b>lexical</b><span>Heading strings matched verbatim against title and abstract. Nearly flat across all four bands at 0.14&ndash;0.19.</span></li>
+      <li><b>fusion</b><span>Reciprocal rank fusion over the three, because they score in incomparable units. 100 candidates out, 50 submitted.</span></li>
+      <li><b>reranker</b><span>A cross-encoder rereads each pair and its order is <em>fused</em> with the retrieval order, not substituted: replacing loses 0.06 R@10 by wrecking the head band.</span></li>
+      <li><b>fine-tune</b><span>LoRA contrastive training on one A100, 87 minutes: +0.0668 dev R@10, against +0.0079 for doubling the corpus. It buys the head and sells the zero-shot band.</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="rules-title">
+    <div class="section-head prose">
+      <h2 id="rules-title">Two disciplines every number rests on</h2>
+    </div>
+
+    <div class="two-up">
+      <div class="discipline">
+        <h3>The model cutoff</h3>
+        <p>
+          Every model any stage loads is pinned to a revision released on or
+          before <strong>2025-01-31</strong>, the close of the evaluation window,
+          so a comparison against teams who competed in January 2025 is not
+          flattered by a year of model progress. A name does not carry that
+          claim &mdash; both E5 checkpoints this project started from had commits
+          landed on them in April 2026 &mdash; so a committed registry records
+          each model's creation date, and an unvouched model is refused before
+          any weights are fetched.
+        </p>
+      </div>
+      <div class="discipline">
+        <h3>The split, opened once</h3>
+        <p>
+          Every configuration decision was made on 5,354 dev records. The gold
+          split was read on <strong>2026-09-09</strong> under a configuration
+          digested into a plan file and committed one commit earlier; the run
+          refuses a row the plan does not name or whose digest has moved, and the
+          receipt written afterwards makes a second read a refusal that has to
+          carry a recorded justification.
+        </p>
+      </div>
+    </div>
+
+    <p class="note">
+      One caveat is reported because the spec committed to reporting it: 134 test
+      records duplicate an indexed training document's title and abstract under a
+      different TIBKAT id, which a neighbour retriever finds unusually easy.
+      Removing them moves R@10 by 0.0017.
+    </p>
+  </section>
+
+  <footer>
+    <div>Retrieval-based GND subject tagging for TIBKAT records &mdash; SemEval-2025 Task 5, <code>tib-core-subjects</code>.</div>
+    <div>Figures from a single test run on an M4 Pro, 2h35m, scored by the organizers' unmodified evaluator.</div>
+  </footer>
+
+</div>
+
+<script>
+  // One square per zero-shot heading, in the order the derivation reports them:
+  // the 180 the larger corpus reaches, then the 812 it does not.
+  (function () {
+    const strip = document.getElementById("strip");
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < 992; i++) {
+      const cell = document.createElement("span");
+      cell.className = i < 180 ? "cell reached" : "cell unreachable";
+      fragment.appendChild(cell);
+    }
+    strip.appendChild(fragment);
+  })();
+</script>
