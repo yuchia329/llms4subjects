@@ -3,61 +3,345 @@
 Retrieval-based GND subject tagging for TIBKAT records — SemEval-2025 Task 5,
 `tib-core-subjects` track.
 
-Subject assignment is treated as **retrieval over a label vocabulary**, not
-classification into a label set, because 19.1% of the labels in the gold test
-set never appear in training and a closed-vocabulary classifier scores zero on
-them by construction. Candidates come from three fused retrievers, a
-cross-encoder reranks them, and an LLM adjudicates the least-confident records.
-Every metric is reported broken down by how often each label appeared in
-training, which no published system on this benchmark does.
+Subject assignment is **retrieval over a 79,427-entry label vocabulary**, not
+classification into a label set: 19.1% of the labels in the gold test split
+never appear in training, and a closed-vocabulary classifier scores zero on them
+by construction. Three fused retrievers propose candidates, a cross-encoder
+reranks, an LLM adjudicates the least-confident fifth, and every metric is
+broken down by how often the label appeared in training.
 
-- [docs/spec.md](docs/spec.md) — what is being built and why, with the measured
-  figures behind each decision
-- [docs/idea.md](docs/idea.md) — the earlier design, kept as the reasoning record
-- [docs/results.md](docs/results.md) — every experiment's numbers, appended as it lands
-- [docs/artifacts.md](docs/artifacts.md) — artifact cache, configs, and the two hosts
-- [legacy/README.md](legacy/README.md) — the contaminated dataset the earlier
-  numbers were measured on
+## Result
 
-## The result, in short
+Gold test split, 4,910 records, opened once on 2026-09-09 under a configuration
+committed one commit earlier. Organizers' own scorer:
 
-**812 of the gold test split's subject headings appear on no document,
-anywhere, and they carry 7.2% of its gold assignments.** Every published system
-on this leaderboard proposes headings by document similarity — the winning one
-harvests the subjects of a record's nearest neighbours — and a heading no
-document carries cannot be harvested from a neighbour at any k, from any index.
-Those 851 assignments are out of reach for the whole family of methods the
-leaderboard is made of, including the one that won it. This system, which
-scores a document against the *text* of all 79,427 vocabulary entries, reaches
-**0.323 R@10** on them.
+| system            | P@5    | R@5        | P@10   | R@10       | Avg R@k    |
+| ----------------- | ------ | ---------- | ------ | ---------- | ---------- |
+| RUC Team (winner) | 0.25   | 0.48       | 0.16   | 0.57       | 0.66       |
+| Annif             | 0.23   | 0.48       | 0.14   | 0.54       | 0.59       |
+| DUTIR831          | 0.23   | 0.49       | 0.13   | 0.54       | 0.56       |
+| LA2I2F            | 0.20   | 0.41       | 0.13   | 0.49       | 0.58       |
+| **this run**      | 0.2068 | **0.5056** | 0.1346 | **0.6299** | **0.7550** |
+
+- **812 test headings appear on no document in any released corpus**, carrying
+  851 assignments — 7.2% of the split. Every published system here ranks by
+  document similarity, so all of them score 0.000 there. This one scores
+  **0.323 R@10**, because it scores documents against label _text_.
+- Recall is above every published row; precision is below the top two (P@10
+  0.1346 against 0.16 and 0.14) and inside the published rounding of the other
+  two. Same fact twice: this system finds _a_ correct heading more often and
+  _all_ of a record's headings less often.
+- Aggregation moves the headline further than method does. One set of
+  predictions scores 0.5910 record-micro and 0.7156 one-vote-per-cell, 0.1245
+  apart at k=10, where 0.08 separates first from fourth above.
+- Every model is pinned to a revision released on or before **2025-01-31**, the
+  close of the evaluation window.
+
+| document                                         | what is in it                                                                                                  |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [docs/results.md](docs/results.md)               | every experiment's numbers, band breakdowns, wall clocks                                                       |
+| [docs/spec.md](docs/spec.md)                     | what is built and why, with the figure behind each decision                                                    |
+| [docs/artifacts.md](docs/artifacts.md)           | artifact cache, configs, the two hosts                                                                         |
+| [docs/idea.md](docs/idea.md)                     | the earlier design, kept as the reasoning record                                                               |
+| [legacy/README.md](legacy/README.md)             | the contaminated dataset earlier numbers used                                                                  |
+| [docs/812-headings.html](docs/812-headings.html) | the bound as a single page ([published](https://claude.ai/code/artifact/d65b0f93-c161-4c34-8008-1129a4c10199)) |
+
+## How it got here
+
+I built the first version in fall 2024, the first serious training project of
+my NLP master's, on a belief I no longer hold: that the strongest pretrained
+model with a classification head over the label set answers any labelling task.
+It landed nowhere near the leaderboard and cost more compute than the task
+deserved — it is still here, runnable, as `baseline/`. Two years later I rebuilt
+it as retrieval. Five measurements, in the order they were made.
+
+### 1. What the winning method cannot reach
+
+kNN over document embeddings — harvest the subjects of the nearest training
+neighbours — is what won this track, and it is a reasonable first row at 0.3023
+dev micro R@10. By label frequency band:
+
+| kNN alone, dev | head   | torso  | tail   | zero-shot  |
+| -------------- | ------ | ------ | ------ | ---------- |
+| micro R@10     | 0.6923 | 0.3639 | 0.1089 | **0.0000** |
+
+Structural, not unlucky: a label no indexed document carries cannot be harvested
+from a neighbour at any k, from any index.
+
+### 2. A quarter of the data, three retrievers, one fusion
+
+Rung 1 indexes 8,000 documents — a quarter of `core_train` — and holds
+everything but the variable under test fixed. Two mechanisms that read label
+_text_ join kNN: `dense` (the document scored against all 79,427 label vectors)
+and `lexical` (BM25 over label strings). Seven rows, one retrieval pass:
+
+| retrievers          | dev micro R@10 | head       | torso      | tail       | zero-shot  |
+| ------------------- | -------------- | ---------- | ---------- | ---------- | ---------- |
+| `knn`               | 0.3023         | 0.6923     | 0.3639     | 0.1089     | 0.0000     |
+| `dense`             | 0.1224         | 0.0538     | 0.0900     | 0.1628     | **0.2623** |
+| `lexical`           | 0.1558         | 0.1886     | 0.1445     | 0.1456     | 0.1925     |
+| `dense` + `knn`     | 0.3298         | 0.6993     | 0.3968     | 0.1463     | 0.0000     |
+| `knn` + `lexical`   | 0.3434         | **0.7274** | 0.4251     | 0.1365     | 0.0000     |
+| `dense` + `lexical` | 0.2099         | 0.1812     | 0.1793     | 0.2361     | **0.3214** |
+| **all three**       | **0.3964**     | 0.7072     | **0.4511** | **0.2262** | 0.1871     |
+
+kNN falls monotonically down the bands, the label tower rises monotonically,
+lexical is flat — so they are fused rather than chosen between:
 
 ```
-python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
-    --predictions artifacts/test/headline/submission \
-    --json reference/zero_shot_bound.json
+score(code) = Σ over the retrievers that found it of  weight / (rrf_k + rank)
 ```
 
-The bound is arithmetic over three committed things and no model: the frozen
-bands, the 70,579-document corpus the run indexed, and the split's own gold.
-Dev agrees on different records — 880 of 1,053 headings, 7.1% of assignments.
+Ranks, not scores: a summed cosine over neighbours, a cosine against a label
+vector and a BM25 score are incomparable units. `rrf_k` sets what a top rank is
+worth against two retrievers agreeing further down — small values let rank 1
+dominate, large ones flatten the curve until agreement decides; the conventional
+60 was swept against three other values and not beaten.
 
-The leaderboard row, which is the less interesting half: **0.6299 official R@10
-and 0.5910 record-micro R@10** on the 4,910-record gold test split, read once
-on 2026-09-09 under a configuration committed one commit before. Above every
-published row on recall (RUC 0.57, Annif 0.54, DUTIR831 0.54, LA2I2F 0.49) and
-below every one on precision, because 34.1% of the split carries one gold
-heading and this system reaches 0.7367 R@10 there against 0.4163 on records
-with five or more. Aggregation moves that figure further than method does: the
-same predictions score 0.5910 record-micro and 0.7156 one-vote-per-cell over
-all 20 cells, 0.1245 apart at k=10, where 0.08 separates first from fourth on
-the published table.
+|                                                                      | dev micro R@10 | against     |
+| -------------------------------------------------------------------- | -------------- | ----------- |
+| best single retriever (`knn`)                                        | 0.3023         | —           |
+| all three, equal weights                                             | 0.3705         | +0.0682     |
+| all three, tuned (`knn` 1.5, `dense` 1.0, `lexical` 1.0, `rrf_k` 60) | **0.3964**     | **+0.0942** |
 
-Every model is pinned to a revision released on or before **2025-01-31**, the
-close of the SemEval-2025 evaluation window, so the comparison is not flattered
-by a year of model progress. Full writeup with every rung's tables and band
-breakdowns: [docs/results.md](docs/results.md). The same finding as a single
-page — <https://claude.ai/code/artifact/d65b0f93-c161-4c34-8008-1129a4c10199>,
-source in [docs/812-headings.html](docs/812-headings.html).
+Every pair beats both its members and all three beat every pair. The cost is in
+the last column of the first table: fused, the zero-shot band is 0.1871 against
+the tower's own 0.2623, because kNN's weight pushes zero-shot candidates out of
+the top ten. The band is demoted, not lost — 0.4288 of it survives in the
+100-candidate set the reranker reads.
+
+### 3. Which encoder deserved the GPU budget
+
+Four off-the-shelf multilingual encoders, all published before the 2025-01-31
+cutoff, one config each, everything but the encoder fixed — first at 8,000
+documents, then at the full 32,043:
+
+| encoder                             | @ 8,000    | zero-shot @ 8,000 | @ 32,043   | rank  |
+| ----------------------------------- | ---------- | ----------------- | ---------- | ----- |
+| `Alibaba-NLP/gte-multilingual-base` | **0.4724** | 0.2363            | 0.5298     | 1 → 2 |
+| `BAAI/bge-m3`                       | 0.4702     | **0.2498**        | **0.5337** | 2 → 1 |
+| `intfloat/multilingual-e5-base`     | 0.4149     | 0.2310            | 0.4961     | 3 → 3 |
+| `intfloat/multilingual-e5-large`    | 0.4063     | 0.1791            | 0.4926     | 4 → 4 |
+
+`multilingual-e5-large` loses to its own base model: the better
+document-to-document encoder (kNN 0.3193 against 0.3023) and the worse
+document-to-label one (dense 0.0852 against 0.1149), and the label tower is what
+reaches the tail. **The order did not survive the index growing** — Spearman ρ
+0.800, Kendall τ-b 0.667 — so cheap screening generalises for the shortlist's
+membership, not its order: the top two lead the third by 0.0336 and separate
+from each other by 0.0039. Both carried forward.
+
+### 4. Full corpus, then the GPU
+
+Both survivors at the 70,579-document all-subjects index, each off the shelf and
+contrastively fine-tuned, so corpus and training are separable:
+
+| encoder                             | rung 2 | rung 3, off the shelf | rung 3, fine-tuned | index adds | training adds |
+| ----------------------------------- | ------ | --------------------- | ------------------ | ---------- | ------------- |
+| `Alibaba-NLP/gte-multilingual-base` | 0.5298 | 0.5376                | **0.6044**         | +0.0079    | **+0.0668**   |
+| `BAAI/bge-m3`                       | 0.5337 | 0.5411                | 0.5909             | +0.0073    | +0.0498       |
+
+More documents stopped paying and training started: 2.2× the corpus for +0.008,
+against two LoRA runs of 87 and 197 GPU-minutes for +0.07 and +0.05. The
+untrained order flipped again — `gte` starts 0.0035 behind and finishes 0.0135
+ahead, on 2.9M trainable parameters against 7.1M.
+
+### 5. The test split, opened once
+
+Fine-tuned `gte-multilingual-base`, three fused retrievers, cross-encoder over
+the 100 candidates, cut to 50. Scores are in "Result" above; where they come
+from is here:
+
+| gold labels on the record | records | share | micro R@10 |
+| ------------------------- | ------- | ----- | ---------- |
+| 1                         | 1,671   | 34.1% | **0.7367** |
+| 2                         | 1,544   | 31.5% | 0.6992     |
+| 3                         | 830     | 16.9% | 0.6048     |
+| 4                         | 403     | 8.2%  | 0.5273     |
+| 5 or more                 | 456     | 9.3%  | 0.4163     |
+
+Counted over the 4,904 records that reached the submission tree. A third of
+the split carries one gold heading, and that third is where the
+recall figure lives.
+
+## Where the tail goes
+
+Bands are frozen in `reference/frequency_bands.json` before any run reads them,
+so growing an index cannot reclassify what counts as tail:
+
+| band      | train occurrences | labels                 | share of test assignments | test R@10  |
+| --------- | ----------------- | ---------------------- | ------------------------- | ---------- |
+| head      | more than 100     | 65                     | 16.0%                     | 0.7215     |
+| torso     | 10 to 100         | 1,543                  | 44.5%                     | 0.6297     |
+| tail      | 1 to 9            | 12,999                 | 30.7%                     | 0.5353     |
+| zero-shot | never seen        | rest of the vocabulary | 8.9%                      | **0.3547** |
+
+The smallest band, followed through the pipeline, is the shortest description of
+what the rebuild did:
+
+| where                            | zero-shot R@10 | why                                                 |
+| -------------------------------- | -------------- | --------------------------------------------------- |
+| the 2024 classifier              | 0.0000         | structural: no output column exists for the label   |
+| kNN alone, dev                   | 0.0000         | structural: no document carries it                  |
+| label tower alone, dev           | 0.2623         | reachable by having a name                          |
+| three retrievers fused, dev      | 0.1871         | demoted by weights tuned on the aggregate           |
+| the 100 fused candidates, dev    | 0.4288         | what the reranker has to work with                  |
+| after fine-tuning the tower, dev | 0.2167         | training **costs** this band (−0.023)               |
+| the final run, test              | **0.3547**     | the cross-encoder buys back more than training sold |
+
+Dev and test rows differ by split and the last two by a stage, so read the column
+as a direction, not a controlled series. Three things it says:
+
+- **Fine-tuning is monotonic in label frequency, and the sign flips at the end.**
+  Head +0.10 to +0.13, torso +0.08 to +0.09, tail +0.02 to +0.03, zero-shot
+  −0.056 and −0.023. Every training pair is a document and a label some record
+  carries, so the tower fits the 14,607 seen labels and drags the other 64,820
+  around without ever pulling them anywhere.
+- **Mechanisms right about different records get fused, not swapped.** Fusing
+  three retrievers beats the best of them by +0.0942; letting the cross-encoder
+  _replace_ the fused ranking loses 0.06 (+0.15 zero-shot, −0.28 head), while
+  fusing its order with the one it was handed wins +0.034.
+- **Some of the tail is out of reach of the whole method family** — the 812
+  headings above, at 0.323 R@10 here and 0.000 for anything ranking by document
+  similarity.
+
+## The pipeline
+
+`predict(records, config, vocabulary, index_records, store)` is the seam:
+records in, 50 ranked GND codes out, everything else reachable only through
+configuration. `records` and `index_records` are separate arguments so that
+nothing being predicted can contribute its own gold subjects to its own
+candidate set.
+
+| stage         | what it does                                          | measured                                         |
+| ------------- | ----------------------------------------------------- | ------------------------------------------------ |
+| `label_text`  | renders each entry as field-marked bilingual text     | German-only reported as an ablation              |
+| `knn`         | summed similarity of the neighbours carrying a code   | 0.3023 dev R@10 alone                            |
+| `dense`       | document against all 79,427 label vectors             | the only retriever reaching unseen labels        |
+| `lexical`     | BM25 over label strings                               | identical across encoders — the screen's control |
+| `fusion`      | reciprocal rank fusion, 100 candidates out            | +0.0942 over the best single retriever           |
+| `reranker`    | cross-encoder, `fuse` mix, top 50                     | +0.034 R@10, +0.013 P@5                          |
+| `adjudicator` | LLM reorders the top 30 for the least-confident fifth | ceiling +0.046 R@10                              |
+| `evaluator`   | micro and official macro side by side                 | 1.1e-16 from the organizers' script              |
+| `submission`  | the organizers' `<Type>/<lang>/<id>.json` tree        | 50 ranked codes per record                       |
+
+Label text is bilingual because every vocabulary entry is German and 58.7% of
+gold assignments belong to English documents. The English is looked up from
+`reference/label_translations.json`, never produced at run time:
+
+```
+Fachgebiet: Theoretische und Physikalische Chemie / Theoretical and Physical Chemistry
+Schlagwort: Polymere / Polymers
+Synonyme: Makropolymere; Hochpolymere; Polymer
+```
+
+The adjudicator is shown a numbered list and its answer is checked against
+exactly that list — a model asked for GND codes freely invents plausible ones —
+and a response naming anything else is rejected whole and logged. On dev it
+routes 1,070 of 5,354 records, which are the hard ones: 0.0850 P@5 against the
+split's 0.1567.
+
+Confidence is read off the fused ranking, where it correlates +0.41 with
+per-record P@5 (over the reranker's own relevance: −0.05, whose most confident
+decile has 66.7% of records with no correct label at all). Declining the
+least-confident records is outside the official metric, which has no
+representation for abstention:
+
+| dev coverage | P@5    | records with no hit in the top 5 | gold assignments still answered |
+| ------------ | ------ | -------------------------------- | ------------------------------- |
+| 100%         | 0.1567 | 39.2%                            | 100%                            |
+| 50%          | 0.1991 | 26.7%                            | 53.4%                           |
+| 10%          | 0.2627 | —                                | —                               |
+
+## Evaluation
+
+| aggregation               | weighting                                    | used for                                    |
+| ------------------------- | -------------------------------------------- | ------------------------------------------- |
+| micro                     | every gold assignment once                   | model selection                             |
+| official macro-over-cells | one vote per `<record type> × language` cell | the headline, comparable to the leaderboard |
+
+The organizers' arithmetic is reproduced exactly, rounding included;
+`tests/test_evaluator.py` runs their script over a committed fixture and asserts
+agreement at every k from 5 to 50, on every cell and both other sheets. The two
+aggregations diverge because the cells are extreme: on test, 9 of 20 carry 52.5%
+of the macro figure and seven of those hold nine records or fewer. Eleven of the
+twenty are cells the organizers' own reader raises `KeyError` on (it seeds `de`
+and `en` only), so the like-for-like row against the leaderboard is the 9-cell
+one — which is the 0.6299 quoted above.
+
+## Data
+
+No dataset file is tracked in git: `TIBKAT_dataset/*.csv`, `GND_dataset/*.json`,
+the `.cache/` clone and `artifacts/` are all ignored. Two commands fetch and
+build everything from the official release, sparse-cloning
+[https://github.com/jd-coderepos/llms4subjects](https://github.com/jd-coderepos/llms4subjects) into `.cache/` on first run:
+
+```bash
+python build_tibkat_csv.py                        # tib-core records + GND vocabulary
+python build_tibkat_csv.py --subset all-subjects  # the second track, needed for rung 3
+python scripts/verify_split_alignment.py          # attest both corpora before indexing
+```
+
+| written                                                                             | where             | size   |
+| ----------------------------------------------------------------------------------- | ----------------- | ------ |
+| `core_{train,dev,test}.csv`, `all_{train,dev,test}.csv`                             | `TIBKAT_dataset/` | 195 MB |
+| `GND-Subjects-{tib-core,all}.json`, name-qualifier sidecars, `qualifier_stats.json` | `GND_dataset/`    | 82 MB  |
+| sparse clone of the release                                                         | `.cache/`         | 1.9 GB |
+
+The splits:
+
+| file                     | records | unique labels | assignments |
+| ------------------------ | ------- | ------------- | ----------- |
+| `core_train.csv`         | 32,043  | 14,607        | 78,037      |
+| `core_dev.csv`           | 5,354   | 5,563         | 13,085      |
+| `core_test.csv`          | 4,910   | 5,189         | 11,798      |
+| `all_train.csv` (rung 3) | 70,588  | —             | —           |
+
+- `all_train.csv` is 70,633 rows under 70,588 records: 45 documents filed twice,
+  20 of them with differing gold, merged into one carrying the union.
+- **None of the 4,910 gold test records is in** `all_train`**.** Nine `core_dev`
+  records are, so they are named in `reference/split_alignment.json` and dropped
+  from every index — **70,579 documents indexed**.
+- 19.1% of test labels never occur in train.
+- The earlier CSVs were contaminated — 142 training records were also in the
+  gold test set, 8,966 titles came from the wrong track — and were removed on
+  2026-09-07. Numbers measured on them are not comparable; `legacy/` keeps their
+  statistics and branch `initial_submission` keeps the files.
+
+### Vocabulary
+
+GND disambiguates homographs with a qualifier (`Interaktion,Naturwissenschaft`
+against `Interaktion,Soziologie`). The files used until 2026-09-07 had them
+stripped, merging distinct senses; the rebuild restores them and recovers 4,741
+tib-core name boundaries the release itself flattens.
+
+| mode            | rendering                 | notes                                     |
+| --------------- | ------------------------- | ----------------------------------------- |
+| `parenthetical` | `Verlegung (Ortswechsel)` | default; reads as language to an encoder  |
+| `raw`           | `Verlegung Ortswechsel`   | the release string, untouched             |
+| `stripped`      | `Verlegung`               | the pre-rebuild form, kept as an ablation |
+
+| vocabulary | entries | with a qualifier | qualified terms | name   | synonym | related |
+| ---------- | ------- | ---------------- | --------------- | ------ | ------- | ------- |
+| tib-core   | 79,427  | 17,959 (22.6%)   | 22,068          | 4,746  | 12,463  | 4,859   |
+| all        | 204,739 | 61,557 (30.1%)   | 77,583          | 24,772 | 40,600  | 12,211  |
+
+## What the code refuses
+
+Most of the project's discipline is a refusal rather than a convention:
+
+| refusal                                                        | why                                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `run_experiment.py --split core_test`                          | the gold split is opened once, by one script                     |
+| a test row whose config moved since `reference/test_plan.json` | the plan is digested and committed before the split is read      |
+| a second read of `core_test` without a justification           | `reference/test_run.json` is the receipt                         |
+| indexing a corpus `verify_split_alignment.py` has not attested | contamination is checked, not assumed                            |
+| a record contributing its own gold to its own candidates       | `tests/test_pipeline.py` perturbs gold and asserts nothing moves |
+| a model the registry does not date before 2025-01-31           | checked before any weights are fetched                           |
+| an adjudicator response naming a code outside the list shown   | models invent plausible GND identifiers                          |
+| predictions outside the tib-core vocabulary                    | a rung-3 index must not widen the label universe                 |
+| overwriting `reference/frequency_bands.json` without `--force` | bands must not drift between rungs                               |
+| two screen configs differing in more than the encoder          | otherwise the screen ranks a retuning                            |
 
 ## Repository layout
 
@@ -73,574 +357,74 @@ llms4subjects/          the pipeline, one module per stage under stages/
   pipeline.py           predict(...) — the seam tests assert against
   stages/               label_text, encoders, indexes, retrievers, fusion,
                         group_prior, reranker, adjudicator, evaluator, submission
-baseline/               the rejected classifier, kept runnable as a results row
+baseline/               the rejected 2024 classifier, kept runnable as a results row
 configs/                one committed YAML per rung of the experiment ladder
-reference/              frozen reference artifacts, small and tracked on purpose
+reference/              frozen artifacts: bands, model releases, translations, receipts
 official_eval/          the organizers' scorer, unmodified
-scripts/                run_experiment.py, ablate_retrievers.py,
-                        screen_encoders.py, compare_rungs.py,
-                        adjudicate_report.py, coverage_curve.py,
-                        mine_hard_negatives.py, train_encoder.py,
-                        rung3_report.py, verify_split_alignment.py,
-                        verify_model_releases.py,
-                        the fixture and band freeze commands
+scripts/                the harnesses every table above came from
 tests/                  contract and invariant tests
 ```
 
-Stages take their inputs as arguments and return named artifacts; a stage never
-reads the dataset or another stage's files, so the pipeline is importable rather
-than a set of scripts that re-read CSVs. `baseline/` depends on
-`llms4subjects/`, never the reverse.
+Stages take inputs as arguments and return named artifacts; none reads the
+dataset or another stage's files. Everything except training runs on Apple
+Silicon without CUDA — only the two rung-3 fine-tunes and the baseline re-run go
+to the GPU host, which receives a negatives file and returns an adapter.
 
-## Environments
+`baseline/` is the 2024 approach: `bert-base-multilingual-cased` with a dense
+output layer over the 14,607 training labels. Its zero-shot recall is exactly
+zero and `tests/test_baseline_classifier.py` asserts it with random scores — no
+training run can change it. The original's graph component is not revived: it
+modelled a hierarchy the vocabulary does not contain (zero `skos:broader`
+triples), and its output was a batch-constant vector that could only shift the
+head's bias.
 
-The split is a hard constraint: everything except training runs on Apple
-Silicon without CUDA.
+## Commands
 
-```
+```bash
+# setup — Mac, no CUDA
 uv venv && uv pip install -r requirements/mac.txt -r requirements/dev.txt
-```
 
-The three training runs — two rung-3 fine-tunes and the baseline re-run — go to
-the GPU host with `requirements/gpu.txt`. See
-[docs/artifacts.md](docs/artifacts.md) for the host workflow, including how the
-dataset is rebuilt there rather than copied, and how adapters come back.
-
-## Running
-
-```
-python -m llms4subjects configs/rung2.yaml            # resolve a config: keys, device, cache hits
-python scripts/run_experiment.py configs/rung1-knn.yaml   # predict dev and score it
-python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300   # what reranking changes
-python scripts/coverage_curve.py configs/rung1.yaml    # coverage against precision, dev-only
-python scripts/translate_labels.py --report           # translation cache coverage
-python scripts/verify_model_releases.py --offline     # models against the 2025-01-31 cutoff
-python scripts/verify_split_alignment.py              # which corpora are clear to index
-python scripts/zero_shot_bound.py configs/test.yaml --split core_dev   # what no corpus reaches
-python scripts/final_test.py --rehearse               # the final-run harness, on dev
-pytest                                                # contract and invariant tests
-```
-
-`run_experiment.py` is the harness every rung is measured through: it reads the
-dataset, calls `predict`, and scores the result with the shared evaluator, so a
-number in [docs/results.md](docs/results.md) comes from one code path however
-the model that produced it was built. `--limit N` shortens a run, `--submission
-DIR` also writes the organizers' tree, and `--split core_test` is refused —
-the gold test split is opened once, at the end of the project.
-
-That one run is `scripts/final_test.py`, and it is the only thing in the
-repository that reads `core_test`. The configuration it scores is digested into
-`reference/test_plan.json` and committed *before* the split is read, so a row
-whose configuration moved since is refused rather than scored; the receipt in
-`reference/test_run.json` is written after, so a second read is a refusal that
-names the first. Its headline figure comes from the organizers' own script over
-a submission tree rather than from the local evaluator, and the run measures how
-far the two are apart over the records their script scored — 1.1e-16 on the one
-run there has been. See [llms4subjects/testset.py](llms4subjects/testset.py).
-
-## Dataset
-
-The dataset is not tracked in git. One command rebuilds all of it — records and
-vocabulary — from the official release, sparse-cloning
-<https://github.com/jd-coderepos/llms4subjects> into `.cache/` on first run:
-
-```
+# dataset: records and vocabulary, from the official release
 python build_tibkat_csv.py
-```
-
-`TIBKAT_dataset/` holds the official `tib-core-subjects` splits:
-
-| file | records | unique labels | assignments |
-|---|---:|---:|---:|
-| `core_train.csv` | 32,043 | 14,607 | 78,037 |
-| `core_dev.csv` | 5,354 | 5,563 | 13,085 |
-| `core_test.csv` | 4,910 | 5,189 | 11,798 |
-
-Rung 3 also needs the second shared-task track, which is a separate build:
-
-```
 python build_tibkat_csv.py --subset all-subjects
-python scripts/verify_split_alignment.py
-```
+python scripts/verify_split_alignment.py          # which corpora are clear to index
 
-`all_train.csv` is 70,633 rows under **70,588 distinct records** — 45 documents
-the release files twice, 20 of them with differing gold — and it contains every
-`core_train` record plus 38,545 more. The second command is what makes it usable:
-it checks both index corpora against the held-out splits and commits the answer
-to `reference/split_alignment.json`, which every run reads before it indexes
-anything. The gold test split is clear — **none of its 4,910 records is in
-`all_train`** — and nine `core_dev` records are not, so those nine are named in
-the attestation and dropped from every index. 70,579 documents indexed.
+# run and score
+python -m llms4subjects configs/rung2.yaml        # resolve a config: keys, device, cache hits
+python scripts/run_experiment.py configs/rung1-knn.yaml
+python scripts/run_experiment.py configs/rung1.yaml --limit 500 --submission out/
 
-`core_test.csv` is the organizers' gold-standard test set, released after the
-competition. Columns are `id, type, lang, title, abstract, subjects`; `id` is the
-TIBKAT record id, so splits are traceable and provably disjoint. 19.1% of test labels
-never occur in train, which any label-set-closed classifier cannot recover.
-
-`official_eval/llms4subjects-evaluation.py` is the organizers' scorer
-(Precision@k / Recall@k / F1@k, broken down by record type and language).
-
-The earlier CSVs were contaminated: 142 training records also appeared in the gold
-test set, and 8,966 titles came from `all-subjects` rather than `tib-core-subjects`.
-They were removed on 2026-09-07; `legacy/` records their statistics, and the files
-themselves remain in git history on branch `initial_submission`. Metrics measured on
-that data are not comparable to metrics measured now.
-
-## Vocabulary and qualifier rendering
-
-`GND_dataset/` holds the two vocabulary files, copied verbatim from the release and
-re-keyed by GND code, plus `GND-Name-Qualifiers-*.json` and `qualifier_stats.json`
-written by the same rebuild.
-
-GND disambiguates homographs with a qualifier: `Interaktion,Naturwissenschaft` is a
-different sense from `Interaktion,Soziologie`. The vocabulary files this project used
-until 2026-09-07 had those qualifiers stripped, altering 18,043 of the 79,427 tib-core
-entries and merging distinct senses into one string. The rebuild restores them.
-
-`llms4subjects.stages.label_text` renders an entry as field-marked text, with the
-qualifier rendering as a flag (`LabelTextConfig.qualifiers`), three modes:
-
-| mode | rendering | notes |
-|---|---|---|
-| `parenthetical` | `Verlegung (Ortswechsel)` | default; reads as natural language to an encoder |
-| `raw` | `Verlegung Ortswechsel` | the release string, untouched |
-| `stripped` | `Verlegung` | the pre-rebuild form, kept as an ablation |
-
-Preferred names are the one case the release itself flattens — the JSON holds
-`Verlegung Ortswechsel` where the accompanying `*_dnb-skos.ttl` holds
-`Verlegung (Ortswechsel)` — so the rebuild recovers 4,741 tib-core (24,765 all-subjects)
-name boundaries into the sidecar map that the renderer reads.
-
-How much of the vocabulary each mode moves, from `qualifier_stats.json`:
-
-| vocabulary | entries | entries with a qualifier | qualified terms | name | synonym | related |
-|---|---:|---:|---:|---:|---:|---:|
-| tib-core | 79,427 | 17,959 (22.6%) | 22,068 | 4,746 | 12,463 | 4,859 |
-| all | 204,739 | 61,557 (30.1%) | 77,583 | 24,772 | 40,600 | 12,211 |
-
-## Retrieval
-
-`llms4subjects.pipeline.predict` is the seam: records in, 50 ranked GND codes
-per record out, everything else reachable only through configuration.
-
-```python
-candidates = predict(records, config, vocabulary, index_records, store)
-```
-
-`records` and `index_records` are separate arguments, and that separation is the
-project's central anti-requirement made structural: nothing being predicted can
-contribute its own gold subjects to its own candidate set. A record that appears
-in the index is dropped from its own neighbourhood by id, and
-`tests/test_pipeline.py` perturbs every input record's gold labels and asserts
-the candidate sets do not move. The earlier `.train_knn_e5.py` draft built its
-label universe out of the evaluation split's own gold subjects; no number from
-that construction means anything.
-
-The retrievers are three, behind one interface:
-
-| retriever | mechanism | reaches |
-|---|---|---|
-| `knn` | subjects of the nearest indexed documents | labels some indexed record carries |
-| `dense` | the document scored against all 79,427 label vectors | any label, seen or not |
-| `lexical` | label strings matched against the document text | verbatim headings |
-
-A code's kNN score is the summed similarity of the neighbours carrying it, so
-two close documents agreeing on a subject outrank one document mentioning it.
-`neighbours` documents rarely carry 50 distinct subjects — 20 neighbours at 2.4
-subjects each is roughly 40 codes — so the scan continues past `neighbours` to
-fill the 50-slot contract, and everything it finds there is ranked below
-everything harvested. Otherwise a code seen twice at neighbours 30 and 40 could
-outrank one seen at neighbour 2, and `neighbours` would be a suggestion rather
-than a parameter.
-
-The `dense` retriever is the one the design exists for. It renders every
-vocabulary entry as field-marked text, embeds all 79,427 of them, and scores the
-document against the whole tower, so a label is reachable by having a name
-rather than by having a training example. That is not a marginal gain: 8.5% of
-dev gold assignments are carried by no training record at all, and `rung1-knn`
-scores 0.0000 on them at every k by construction. Label text is bilingual by
-default (see below), `Definition` is off by default and available as an ablation
-(`label_text.include_definition`), and `Related Subjects` are not part of the
-text at all — see "Vocabulary and qualifier rendering" above and
-[docs/results.md](docs/results.md) for what each choice measures.
-
-## Bilingual label text
-
-Every one of the 79,427 vocabulary entries is German, and 58.7% of gold label
-assignments belong to English documents, so matching a document against a label
-name is a cross-lingual task for most of the benchmark. The two retrievers that
-read label text render it in both languages:
-
-```
-Fachgebiet: Theoretische und Physikalische Chemie / Theoretical and Physical Chemistry
-Schlagwort: Polymere / Polymers
-Synonyme: Makropolymere; Hochpolymere; Polymer
-```
-
-The English is looked up, never produced: `reference/label_translations.json`
-holds all 79,224 distinct German strings the renderer can ask about, translated
-once by `python scripts/translate_labels.py` and committed. A run reads a dict,
-and no module on the rendering path can import a translation model, so the
-second language costs indexing and evaluation nothing. Synonyms stay German —
-they are alternate surface forms of a name whose English is on the line above.
-
-`label_text.bilingual: false` renders German-only and reads no cache at all,
-which is the ablation the results document reports separately for German and
-English documents. For the lexical retriever the same flag adds each label's
-English name as one more surface string to match rather than joining it to the
-German one, because a lexical match is against a whole string.
-
-Two senses of one word share one entry: the cache is keyed by German string
-rather than by GND code, so `Interaktion,Naturwissenschaft` and
-`Interaktion,Soziologie` share the translation of `Interaktion` and differ in
-the translated qualifier, which is what keeps the homograph distinction the
-vocabulary rebuild recovered. See [docs/artifacts.md](docs/artifacts.md).
-
-The three are combined by **reciprocal rank fusion**: a code's fused score is
-the sum over the retrievers that found it of `weight / (rrf_k + rank)`. Rank and
-not score, because the three score in incomparable units — a summed cosine
-similarity over neighbouring documents, a single cosine similarity against a
-label vector, a BM25 score — and fusing the numbers themselves would hand the
-ranking to whichever unit happens to be largest. `rrf_k` is what a rank is worth
-against agreement between retrievers, and the weights are tuned on dev and
-committed to the config so that no retriever's influence is an accident.
-
-Every surviving candidate keeps the rank each retriever gave it, so a prediction
-can be attributed to the component that found it. Candidate generation emits the
-top `fusion.candidates` — 100 — of which the submission takes the top 50; the
-rest are what the reranker reads and what the recall ceiling is measured at.
-
-`scripts/ablate_retrievers.py` prints the per-retriever ablation table: every
-retriever alone, every pair and all three, with band-level recall for each. The
-retrievers run once and each row fuses a subset of that one pass, so seven rows
-cost one pass over the index. `--tune-weights` sweeps the weights and `rrf_k` on
-dev and prints the block to paste into a config. See
-[docs/results.md](docs/results.md) for what the table says.
-
-### Reranking
-
-`reranker.enabled` puts a cross-encoder between the candidates and the
-submission: it scores each record's text against each candidate's label text
-jointly, and returns the top `output_k` — 50, the submission length — with the
-retrievers' provenance intact. Off by default, and off means the fused ranking
-is returned untouched, so every earlier row in
-[docs/results.md](docs/results.md) still comes from the same call.
-
-`reranker.mix` decides what the model's opinion does to the ranking it was
-given. `replace` is the original contract — the cross-encoder's order wins — and
-it loses 0.06 micro R@10 on the 300-record dev sample it was screened over,
-because it wrecks the head band (−0.28) while gaining the zero-shot band
-(+0.15). `fuse` combines the two orders by reciprocal rank instead, and wins
-0.034 R@10 and 0.013 P@5 over the candidates it was handed. A mechanism that is
-right about different records than the one before it is a fusion problem rather
-than a replacement one, and this is the measurement that says so.
-
-Two off-the-shelf multilingual rerankers are screened before any GPU time is
-asked for, both pinned pre-cutoff in `reference/model_releases.json`, and which
-side of the pair is the query is a flag rather than a guess because these models
-are asymmetric:
-
-```
-python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300
-python scripts/rerank_report.py configs/rung1-rerank-base.yaml --sample 300 --query label
-```
-
-The harness prints the fused and reranked metrics side by side, each precision
-figure next to the maximum achievable at that k, the band and language
-breakdowns, and the calibration of the per-record confidence measure that
-`reranker.confidence` emits for the adjudicator to route on. It caches the
-model's scores rather than the ranking it produced, so `--sweep-mix` tunes
-`mix_weight` over six rankings through the real stage for the price of none.
-
-`confidence` reads any scored ranking, and which one it reads matters more than
-the reranker does: over the fused ranking it correlates +0.41 with per-record
-P@5, over the reranker's own relevance −0.05, whose most confident decile has
-66.7% of its records with no correct label at all. An off-the-shelf reranker on
-this task is confidently wrong. The whole screen — two models, both pairings,
-both label renderings, replacement against fusion, and the recommendation
-against spending a fourth GPU run on a fine-tune — is in
-[docs/results.md](docs/results.md).
-
-## Adjudication, and the identifiers a model may not invent
-
-The last stage shows the least-confident fifth of records their top 30
-candidates and asks a language model to choose among them. The constraint is the
-stage rather than a detail of it: a model asked for GND codes freely produces
-identifiers that look entirely plausible and do not exist, so it is shown a
-numbered list and its answer is checked against exactly that list. A response
-naming anything else is rejected whole — not trimmed to its valid part — logged
-to `artifacts/adjudicated/<key>/rejections.jsonl`, and the record keeps the
-ranking it arrived with. The stage can reorder and can do nothing else.
-
-```
-python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml --dry-run
-python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml
-```
-
-`--dry-run` routes, builds every prompt and calls nothing, so a run's shape and
-its bill are checkable before a key is spent on either. On dev it routes 1,070
-of 5,354 records, and they are the hard ones: 0.0850 P@5 against the split's
-0.1567. Because a reordering cannot add a candidate, the routed subset's own
-micro R@100 of 0.5325 bounds the whole stage at **+0.046 micro R@10 split-wide**
-even from a perfect model — a ceiling worth knowing before the 2.1M input tokens
-are spent, not after. Responses are cached and written through as each arrives,
-so an interrupted run keeps what it bought. See
-[docs/results.md](docs/results.md).
-
-Predictions are restricted to the tib-core vocabulary whatever the index holds,
-which is what keeps a rung-3 all-subjects index from widening the label
-universe. A stage that cannot run — an unregistered model, an unfitted prior —
-is refused before any weights are fetched, because a refusal that arrives after
-indexing costs hours and a flag that is silently ignored would be reported as an
-ablation that never ran.
-
-Encoding is the expensive part and it is cached by encoder plus a digest of the
-input texts, so the same dev split costs 106s once and 9s thereafter. See
-[docs/artifacts.md](docs/artifacts.md).
-
-## The model cutoff, and which encoder won
-
-Every component is restricted to models released on or before **2025-01-31**,
-the close of the SemEval-2025 Task 5 evaluation window, so the comparison
-against teams who competed in January 2025 is fair rather than flattered by
-later model progress. A model name does not carry that claim — both E5
-checkpoints this project started from had commits landed on them in April 2026 —
-so it is carried by [reference/model_releases.json](reference/model_releases.json),
-which records each model's creation date and pins it to the newest commit inside
-the cutoff:
-
-```
-python scripts/verify_model_releases.py --offline   # re-check the committed file
-python scripts/verify_model_releases.py --force     # re-derive it from the hub
-```
-
-`llms4subjects.models.check_cutoff` refuses a model the registry does not vouch
-for before any weights are fetched, and `stages.encoders.resolve` is what turns
-a config into the pinned revision actually loaded. A model that ships its own
-modelling code has that repository and commit pinned too, since loading it runs
-it.
-
-The adjudicator's model is hosted rather than downloaded, so there is no commit
-to fetch: those entries carry `origin: api` and are pinned to the dated model id
-the request names — `claude-3-5-sonnet-20241022` is one set of weights where
-`claude-3-5-sonnet` is whichever is current — with the provider's announcement
-as the source. A declared date is weaker evidence than a fetched one, and the
-registry says which kind each entry has rather than letting them look alike. The
-single appendix row docs/spec.md allows on a current model needs
-`adjudication.appendix: true`, and that flag is refused on a model inside the
-cutoff, so the two rows cannot be filed as each other.
-
-Four encoders were screened off the shelf at the 8,000-document rung-1 index,
-one config each, everything but the encoder held fixed:
-
-| encoder | dev micro R@10 | zero-shot band |
-|---|---:|---:|
-| `Alibaba-NLP/gte-multilingual-base` | **0.4724** | 0.2363 |
-| `BAAI/bge-m3` | 0.4702 | **0.2498** |
-| `intfloat/multilingual-e5-base` | 0.4149 | 0.2310 |
-| `intfloat/multilingual-e5-large` | 0.4063 | 0.1791 |
-
-```
+# the tables above, each from its own harness
+python scripts/ablate_retrievers.py configs/rung1.yaml --tune-weights
 python scripts/screen_encoders.py configs/rung1.yaml configs/rung1-e5-large.yaml \
     configs/rung1-bge-m3.yaml configs/rung1-gte-base.yaml
-```
+python scripts/compare_rungs.py reference/screens/rung1.json reference/screens/rung2.json
+python scripts/rerank_report.py configs/rung1-rerank.yaml --sample 300
+python scripts/adjudicate_report.py configs/rung1-adjudicate.yaml --dry-run
+python scripts/coverage_curve.py configs/rung1.yaml --figure artifacts/coverage/rung1.png
+python scripts/zero_shot_bound.py configs/test.yaml --split core_dev
 
-The screen refuses configs that differ in anything but their encoder, and refuses
-two configs naming the same one, because otherwise it ranks a retuning rather
-than a model. `multilingual-e5-large` scoring below its own base model is the
-result worth knowing: within one family the larger checkpoint was the better
-document-to-document encoder and the worse document-to-label one, and the label
-tower is what reaches the tail.
-
-The same four then run at the full 32,043-document index, with index size as the
-only variable, to find out whether that ranking meant anything:
-
-| encoder | @ 8,000 | @ 32,043 | rank |
-|---|---:|---:|---|
-| `BAAI/bge-m3` | 0.4702 | **0.5337** | 2 → 1 |
-| `Alibaba-NLP/gte-multilingual-base` | 0.4724 | 0.5298 | 1 → 2 |
-| `intfloat/multilingual-e5-base` | 0.4149 | 0.4961 | 3 → 3 |
-| `intfloat/multilingual-e5-large` | 0.4063 | 0.4926 | 4 → 4 |
-
-```
-python scripts/screen_encoders.py configs/rung2.yaml configs/rung2-e5-large.yaml     configs/rung2-bge-m3.yaml configs/rung2-gte-base.yaml     --json reference/screens/rung2.json
-python scripts/compare_rungs.py reference/screens/rung1.json     reference/screens/rung2.json
-```
-
-**The ranking did not hold** — Spearman ρ 0.800, Kendall τ-b 0.667 — so cheap
-screening generalises for the *membership* of the shortlist and not for its
-order: the top two are the same pair at both index sizes, by 0.0336 and more over
-the third, and they swap with each other on 0.0039. Both go to rung 3, which is
-what carrying two forward was for. The dense and lexical columns are identical at
-both index sizes, as they must be — neither reads an indexed document — so every
-difference is the neighbour retriever's. See
-[docs/results.md](docs/results.md).
-
-## Rung 3: the all-subjects index, and what the GPU bought
-
-Both shortlisted encoders then run at the 70,579-document all-subjects index,
-each off the shelf and contrastively fine-tuned, so that index size and training
-are separable:
-
-| encoder | rung 2 | rung 3, off the shelf | rung 3, fine-tuned | index adds | training adds |
-|---|---:|---:|---:|---:|---:|
-| `Alibaba-NLP/gte-multilingual-base` | 0.5298 | 0.5376 | **0.6044** | +0.0079 | **+0.0668** |
-| `BAAI/bge-m3` | 0.5337 | 0.5411 | 0.5909 | +0.0073 | +0.0498 |
-
-```
+# fine-tuning: mine on the Mac, train on the GPU host, score back here
 python scripts/mine_hard_negatives.py configs/rung2-gte-base.yaml
-ssh nlp2 '... scripts/train_encoder.py configs/rung3-gte-base.yaml --negatives-from configs/rung2-gte-base.yaml'
-python scripts/rung3_report.py --pair configs/rung3-untrained.yaml configs/rung3.yaml     --pair configs/rung3-gte-base-untrained.yaml configs/rung3-gte-base.yaml     --against reference/screens/rung2.json --json reference/rung3-report.json
-```
+ssh nlp2 '... scripts/train_encoder.py configs/rung3-gte-base.yaml \
+    --negatives-from configs/rung2-gte-base.yaml'
+python scripts/rung3_report.py --pair configs/rung3-untrained.yaml configs/rung3.yaml \
+    --against reference/screens/rung2.json
 
-**Index size is spent and the GPU is where the points are.** Doubling the corpus
-again buys +0.008, against +0.06 for the previous fourfold step; two LoRA runs of
-197 and 87 minutes buy +0.05 and +0.07. Hard negatives are mined on the Mac from
-the rung-2 indexes, so the host receives a file and returns a few megabytes of
-adapter; indexing and scoring never leave Apple Silicon.
+# the test split, once
+python scripts/final_test.py --rehearse           # the same harness, on dev
+python scripts/final_test.py --fix-plan           # commit the plan digest first
+python scripts/final_test.py --json artifacts/test/run.json
+python scripts/zero_shot_bound.py configs/test.yaml --split core_test \
+    --predictions artifacts/test/headline/submission
 
-**The untrained ranking did not survive training either.**
-`gte-multilingual-base` starts 0.0035 behind and finishes 0.0135 ahead, on 2.9M
-trainable parameters against 7.1M and 87 GPU-minutes against 197 — so carrying
-two encoders forward was right for the second rung running. The official
-macro-over-cells metric ranks them the other way (`bge-m3` 0.7089 against 0.6927),
-which is reported rather than reconciled.
-
-**Training buys the head and sells the zero-shot band**: +0.10 to +0.13 on head,
-+0.08 to +0.09 on torso, +0.02 to +0.03 on tail, and **−0.056 and −0.023 on
-zero-shot** — the band retrieval was chosen over classification to reach. Every
-training pair is a document and a label some record carries, so the tower learns
-a geometry fitted to the 14,607 seen labels. What is left for the reranker and
-the adjudicator is exactly the band they were measured to be good at.
-
-**And 7.1% of gold assignments are unreachable by any corpus.** Of the 1,053
-dev-gold labels no tib-core training record carries, 38,545 extra documents reach
-173 — all of them into the tail band — and leave 880. A label on no document
-cannot be proposed by document similarity, at any corpus size, which bounds every
-leaderboard system built on it. On test the same derivation gives 812 labels and
-7.2%; see "The result, in short" above and [docs/results.md](docs/results.md).
-
-## Evaluation
-
-Every result the project reports goes through `llms4subjects.stages.evaluator`,
-which scores a mapping of gold label lists against a mapping of ranked
-predictions and returns both aggregations side by side:
-
-| aggregation | weighting | used for |
-|---|---|---|
-| micro | every gold assignment once | model selection |
-| official macro-over-cells | one vote per `<record type> × language` cell | the headline, comparable to the leaderboard |
-
-The organizers' arithmetic is reproduced exactly, rounding included, and
-`tests/test_evaluator.py` holds it there: for a committed fixture it runs their
-script end to end and asserts agreement at every k from 5 to 50, on the
-`Overall` row, on every cell and on both of their other two sheets.
-
-The two aggregations diverge, and the divergence is a result rather than a
-footnote. On the fixture, a cell holding one record — 2% of the records — carries
-45% of the official recall figure; `EvaluationReport.divergence` ranks the cells
-by how much of it they account for, and `render(report)` returns the whole
-report — both aggregations at all three metrics, then the slices — as text to
-append to the results document.
-
-Metrics slice by document language, record type, and label frequency band:
-
-| band | tib-core train occurrences | labels in the band | of those, in test | share of test assignments |
-|---|---|---:|---:|---:|
-| head | more than 100 | 65 | 65 | 16.0% |
-| torso | 10 to 100 | 1,543 | 1,384 | 44.5% |
-| tail | 1 to 9 | 12,999 | 2,748 | 30.7% |
-| zero | never seen | rest of the vocabulary | 992 | 8.9% |
-
-The first two columns are the frozen artifact; the last two are measured on the
-gold test split, which was opened once on 2026-09-09. The supports landed
-within 0.1pp of the shares [docs/spec.md](docs/spec.md) froze the bands at,
-which is the strongest single check that the split behaves as dev predicted.
-Recall by band on that run: head 0.7215, torso 0.6297, tail 0.5353, **zero
-0.3547**.
-
-The band assignment is **frozen** in `reference/frequency_bands.json` and read,
-never derived, so adding documents to the index cannot reclassify which labels
-count as tail and quietly make one rung's tail number incomparable to the last.
-Growing the index genuinely would move labels — `test_frequency_bands.py` proves
-that on this data — which is why the file exists. Rewriting it is a deliberate
-act:
-
-```
-python scripts/freeze_bands.py            # report the bands, refuse to overwrite
-python scripts/freeze_bands.py --force    # rewrite the reference
-```
-
-### Coverage against precision, which the official metric cannot ask about
-
-The submission format is exactly 50 ranked codes and has no representation for
-abstention, so no leaderboard figure can say what a system is worth when it is
-allowed to decline. The workflow this project exists to support can: a librarian
-confirming proposals is better served by a system that answers 60% of records
-well than by one that answers every record badly.
-
-```
-python scripts/coverage_curve.py configs/rung1.yaml
-python scripts/coverage_curve.py configs/rung1.yaml --figure artifacts/coverage/rung1-fused.png
-```
-
-The curve sweeps the confidence measure the reranking stage defines and scores
-the records still answered at each level. On dev at full coverage, P@5 is 0.1567
-and 39.2% of records hold no correct label in their top five; declining the
-least-confident half lifts P@5 to 0.1991 and lowers that share to 26.7%, and the
-most confident tenth reaches 0.2627 — half of the 0.53 those records' gold set
-sizes allow. It costs what it looks like it costs: answering half the records
-answers 53.4% of the split's gold assignments, and the curve prints that column
-beside the precision so abstention never reads as free.
-
-Three things keep the figure from being mistaken for a result: every rendering
-of it, table and plot alike, carries **outside the official metric**; the split
-is dev and `core_test` is refused; and the harness produces the figure from
-scores already computed — a reranking config is replayed from its cached
-scoring pass or refused, never rescored. The output contract does not move: 50
-codes are still always returned, and abstention is a reading of the confidence
-column. See [docs/results.md](docs/results.md).
-
-`llms4subjects.stages.submission` writes the organizers' `<Type>/<lang>/<id>.json`
-tree with exactly 50 ranked codes per record, so a run can be validated against
-their script end to end. One limitation is theirs, not ours: their reader seeds
-its results with `de` and `en` and then indexes by directory name, so it raises
-`KeyError` on the French, Spanish, Czech, Turkish, Dutch and Japanese records the
-splits contain. The writer emits the true cell and those records are scored
-locally.
-
-## The rejected baseline
-
-`baseline/` holds the earlier approach: `bert-base-multilingual-cased` with a
-dense output layer over the 14,607 training labels. It is archived, not
-developed — it stays runnable only so that "a dense output layer cannot serve
-this problem" is a measured row in the results table rather than an assertion.
-That row is in [docs/results.md](docs/results.md), and it is the reference point
-every pipeline row is read against.
-
-```
-python -m baseline.train --smoke      # first training step on a laptop (MPS)
-python -m baseline.train --epochs 15  # the real run, on the GPU host
+# the 2024 baseline, kept runnable
+python -m baseline.train --smoke
 python -m baseline.score artifacts/baseline/mbert-dense/predictions-core_dev.json
+
+# checks
+python scripts/verify_model_releases.py --offline # models against the 2025-01-31 cutoff
+python scripts/freeze_bands.py                    # report the bands, refuse to overwrite
+python scripts/translate_labels.py --report       # translation cache coverage
+pytest
 ```
-
-Training and scoring are deliberately separate commands on separate machines.
-The full label matrix is 32,043 records by 14,607 labels, which is a GPU-host
-workload, so the run happens on `nlp2` and writes a checkpoint, a `run.json`
-recording its configuration and wall clock, and ranked predictions; those come
-back and are scored here, through the same evaluator and the same frozen bands
-as every pipeline result. `--smoke` takes a prefix of the split so the training
-loop can be exercised locally first.
-
-The zero-shot band recall is exactly zero, and structurally so: the head has one
-column per label seen in `core_train`, so a label that never occurs there cannot
-be emitted at any score. `tests/test_baseline_classifier.py` asserts that with
-random scores, which is the point — no training run can change it.
-
-The graph component of the original is not revived: it modelled a hierarchy the
-vocabulary does not contain (zero `skos:broader` triples exist), its edges came
-from a mapping that put every label in a group of one, and its output was a
-batch-constant vector that could only shift the head's bias.
-`baseline/__init__.py` lists every defect found in the original code and what
-was done about each, since a measurement taken through a broken metric would
-not have been a measurement of the approach.

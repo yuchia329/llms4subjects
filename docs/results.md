@@ -93,9 +93,13 @@ same evaluator and the same frozen bands as every other row here.
 | LA2I2F | 0.20 | 0.41 | 0.13 | 0.49 | 0.58 |
 | **this run** | **0.2068** | **0.5056** | **0.1346** | **0.6299** | **0.7550** |
 
-Above every published row on recall, below every one on precision, at the
-organizers' own aggregation and from the organizers' own script over a
-submission tree. Both facts are the same fact: 34.1% of the test split carries
+Above every published row on recall and below the top two on precision, at
+the organizers' own aggregation and from the organizers' own script over a
+submission tree. It is not below every published row on precision: P@5 0.2068
+clears LA2I2F's 0.20 outright, and P@10 0.1346 sits inside the rounding of
+DUTIR831's and LA2I2F's 0.13 — the precision gap is to RUC and Annif, not to
+the field. The recall and precision pictures are the same fact: 34.1% of the
+test split carries
 exactly one gold heading, and this system reaches 0.7367 R@10 on those records
 against 0.4163 on records with five or more. It finds *a* correct heading more
 often than the published systems and *all* of a record's headings less often,
@@ -2357,8 +2361,13 @@ future run prints the figure rather than having it checked afterwards. The four
 published rows are quoted from docs/spec.md at the two decimals they were
 published at.
 
-**The result is above the top published row on recall and below every one of
-them on precision, and those two facts are the same fact.** Read the ratio: at
+**The result is above the top published row on recall and below the top two
+on precision, and those two facts are the same fact.** The precision half is
+narrower than "below the table": at k=5 this run's 0.2068 is above LA2I2F's
+published 0.20 (whose true value cannot exceed 0.2049 at two decimals), and at
+k=10 its 0.1346 is inside the rounding interval of the two rows published at
+0.13, so those comparisons are undecidable rather than lost. Against RUC (0.25
+and 0.16) and Annif (0.23 and 0.14) it is below at both k. Read the ratio: at
 2.40 gold labels per record, a system whose hits were spread evenly across
 records would score P@5/R@5 ≈ 0.478. RUC's ratio is 0.52 and this run's is
 0.409, which says this run's hits are concentrated on records with *few* gold
@@ -2539,8 +2548,9 @@ subset holds 17.05% of gold assignments and its own R@100 is 0.5325.
   the organizers' script on a submission tree, under a configuration committed
   before the split was opened.
 - **The gap to the top four is not a gap in the direction the ticket expected.**
-  Recall is above every published row and precision is below every published
-  row. Both follow from where the hits fall: 34.1% of the split has one gold
+  Recall is above every published row; precision is below the top two, above
+  LA2I2F at k=5, and inside the published rounding of the bottom two at k=10.
+  Both follow from where the hits fall: 34.1% of the split has one gold
   heading and this system reaches 0.7367 R@10 there against 0.4163 on records
   with five or more.
 - **The aggregation is worth more than the method.** +0.1245 separates

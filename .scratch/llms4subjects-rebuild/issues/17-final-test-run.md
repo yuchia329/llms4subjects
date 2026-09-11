@@ -22,7 +22,8 @@ from. It is not a leaderboard win.
 
 **Status:** done — **0.6299 official R@10, 0.5910 record-micro R@10** on the 4,910-record gold test split,
 read once on 2026-09-09 under a configuration committed one commit earlier. Above every published row on
-recall, below every one on precision, and the two are the same fact: 34.1% of the split carries one gold
+recall, below the top two on precision (above LA2I2F at k=5, inside the published rounding of the two
+0.13 rows at k=10), and the two are the same fact: 34.1% of the split carries one gold
 heading and the system scores 0.7367 R@10 there against 0.4163 on records with five or more. The zero-shot
 band reaches 0.3547. The two adjudication rows remain owed on an API credential; see docs/results.md.
 
