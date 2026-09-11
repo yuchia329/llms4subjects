@@ -37,6 +37,8 @@ committed one commit earlier. Organizers' own scorer:
 - Every model is pinned to a revision released on or before **2025-01-31**, the
   close of the evaluation window.
 
+Writeup: <http://yuchia.dev/projects/llm4subjects/>
+
 | document                                         | what is in it                                                                                                  |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | [docs/results.md](docs/results.md)               | every experiment's numbers, band breakdowns, wall clocks                                                       |

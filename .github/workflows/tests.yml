@@ -1,0 +1,34 @@
+# The contract and invariant tests, on every push. They read fixtures rather
+# than the dataset, so a runner with no TIBKAT_dataset/ is enough; what this
+# guards is the seam between stages, not any model's numbers.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # requirements/mac.txt and requirements/gpu.txt differ only in their torch
+      # build, and neither fits a CPU runner: install base.txt against the CPU
+      # wheel index instead, which is the same pin without the CUDA payload.
+      - name: Install torch (CPU build)
+        run: pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install requirements
+        run: pip install -r requirements/base.txt -r requirements/dev.txt
+
+      - name: Run the tests
+        run: pytest -q
